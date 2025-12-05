@@ -30,17 +30,7 @@ export async function parseRecipeFromUrl(url: string): Promise<FullRecipeInsertD
     }
   }
 
-  // Continue with standard HTML parsing for non-video URLs
-  let html = await fetchViaHttp(url);
-
-  if (!html) {
-    try {
-      html = await fetchViaPuppeteer(url);
-    } catch (error) {
-      log.error({ err: error }, "Puppeteer fetch failed");
-    }
-  }
-
+  const html = await fetchViaPuppeteer(url);
   if (!html) throw new Error("Cannot fetch recipe page.");
 
   const isRecipe = await isPageLikelyRecipe(html);

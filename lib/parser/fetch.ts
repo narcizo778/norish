@@ -117,12 +117,65 @@ export async function fetchViaPuppeteer(targetUrl: string): Promise<string> {
       await new Promise((r) => setTimeout(r, 2000));
     }
 
-    try {
-      await page.waitForSelector('script[type="application/ld+json"]', {
-        timeout: 8000,
+    // Wait for recipe content to be populated
+    const contentLoaded = await page.evaluate(() => {
+      return new Promise<boolean>((resolve) => {
+        const maxWait = 8000;
+        const checkInterval = 200;
+        let elapsed = 0;
+
+        const checkContent = () => {
+          // Check for JSON-LD
+          const jsonLd = document.querySelector('script[type="application/ld+json"]');
+          if (jsonLd?.textContent?.toLowerCase().includes('recipe')) {
+            resolve(true);
+            return;
+          }
+
+          // Check for populated ingredient/instruction containers
+          const ingredientContainers = document.querySelectorAll(
+            '.ingredients, .ingredient, [class*="ingredient"], [id*="ingredient"]'
+          );
+          const instructionContainers = document.querySelectorAll(
+            '.steps, .instructions, .directions, [class*="instruction"], [class*="direction"], [class*="step"], [id*="instruction"], [id*="step"]'
+          );
+
+          // Check if any container has actual content (not just empty)
+          for (const el of ingredientContainers) {
+            if (el.textContent && el.textContent.trim().length > 20) {
+              resolve(true);
+              return;
+            }
+          }
+          for (const el of instructionContainers) {
+            if (el.textContent && el.textContent.trim().length > 20) {
+              resolve(true);
+              return;
+            }
+          }
+
+          // Check for schema.org microdata
+          const schemaRecipe = document.querySelector('[itemtype*="Recipe"]');
+          if (schemaRecipe?.textContent && schemaRecipe.textContent.trim().length > 100) {
+            resolve(true);
+            return;
+          }
+
+          elapsed += checkInterval;
+          if (elapsed >= maxWait) {
+            resolve(false);
+            return;
+          }
+
+          setTimeout(checkContent, checkInterval);
+        };
+
+        checkContent();
       });
-    } catch {
-      await new Promise((r) => setTimeout(r, 1000));
+    });
+
+    if (!contentLoaded) {
+      log.debug({ url: targetUrl }, "Recipe content containers remain empty after waiting");
     }
 
     const content = await page.content();
@@ -137,19 +190,3 @@ export async function fetchViaPuppeteer(targetUrl: string): Promise<string> {
   }
 }
 
-export async function fetchViaHttp(targetUrl: string): Promise<string> {
-  const referer = getReferer(targetUrl);
-
-  try {
-    const res = await (globalThis as any).fetch(targetUrl, {
-      headers: {
-        ...BROWSER_HEADERS,
-        Referer: referer,
-      },
-    });
-
-    return !res || !res.ok ? "" : await res.text();
-  } catch {
-    return "";
-  }
-}

@@ -33,7 +33,7 @@ export class OpenAIProvider implements AIProvider {
       // Build request parameters
       const requestParams: any = {
         model: this.config.model,
-        temperature: this.config.temperature ?? 0.0,
+        temperature: this.config.temperature ?? 1.0,
         messages: [
           { role: "system", content: systemMessage },
           { role: "user", content: prompt },

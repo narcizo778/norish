@@ -34,7 +34,7 @@ export class OllamaProvider implements AIProvider {
           stream: false,
           format: "json",
           options: {
-            temperature: this.config.temperature ?? 0.0,
+            temperature: this.config.temperature ?? 1.0,
           },
         }),
       });

@@ -38,7 +38,7 @@ export class GenericOpenAIProvider implements AIProvider {
         headers,
         body: JSON.stringify({
           model: this.config.model,
-          temperature: this.config.temperature ?? 0.0,
+          temperature: this.config.temperature ?? 1.0,
           max_tokens: this.config.maxTokens,
           messages: [
             { role: "system", content: systemMessage },

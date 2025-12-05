@@ -17,12 +17,84 @@ function extractSanitizedBody(html: string): string {
 
     if ($body.length === 0) return html;
 
-    $body.find("script, style, noscript, svg, iframe, canvas, link, meta, header, footer").remove();
+    // Remove non-content elements
+    $body.find("script, style, noscript, svg, iframe, canvas, link, meta, header, footer, nav, aside .ad, .advertisement, .sidebar, .comments, .social-share, .related-posts, .newsletter").remove();
 
     const blocks: string[] = [];
-    const selectors = "h1,h2,h3,h4,h5,h6,p,li,dt,dd,th,td,figcaption,time,span,img,picture,source";
 
-    $body.find(selectors).each((_, el) => {
+    // First, try to find recipe-specific containers (common recipe site patterns)
+    const recipeContainers = [
+      '[itemtype*="Recipe"]',
+      // Schema.org microdata containers
+      '[itemprop="recipeIngredient"]',
+      '[itemprop="recipeInstructions"]',
+      // Specific recipe content containers (not generic "recipe" class which might match sidebars)
+      '.recipe-content',
+      '.recipe-body',
+      '#recipe',
+      '#recipe-content',
+      // Common ingredient/instruction containers
+      '.ingredients',
+      '.steps',
+      '.instructions',
+      '.directions',
+      '[class*="ingredient-list"]',
+      '[class*="instruction-list"]',
+      // Generic content containers (last resort)
+      'article',
+      'main',
+      '.entry-content',
+      '.post-content',
+    ];
+
+    let $content = $body;
+    let foundSpecificContainer = false;
+
+    for (const selector of recipeContainers) {
+      const $found = $body.find(selector);
+      if ($found.length > 0) {
+        // For ingredient/step containers, we want ALL of them, not just the first
+        if (selector.includes('ingredient') || selector.includes('step') || selector.includes('instruction') || selector.includes('direction')) {
+          // Collect text from all matching containers
+          $found.each((_, container) => {
+            $(container).find('li, p, div, span').each((_, el) => {
+              const t = $(el).text().trim();
+              if (t && t.length > 1) {
+                blocks.push(t);
+              }
+            });
+          });
+          foundSpecificContainer = true;
+        } else {
+          // For article/main containers, use as content source
+          $content = $found.first();
+          foundSpecificContainer = true;
+          break;
+        }
+      }
+    }
+
+    // Also extract the title
+    const title = $body.find('h1.entry-title, h1[itemprop="name"], .recipe-title, h1').first().text().trim();
+    if (title) {
+      blocks.unshift(title);
+    }
+
+    // If we found specific ingredient/step containers, we're done
+    if (foundSpecificContainer && blocks.length > 5) {
+      return blocks
+        .join("\n")
+        .replace(/\r/g, "")
+        .replace(/[\t ]{2,}/g, " ");
+    }
+
+    // Standard semantic elements plus div (for sites that don't use semantic HTML)
+    const selectors = "h1,h2,h3,h4,h5,h6,p,li,dt,dd,th,td,figcaption,time,span,div,img,picture,source";
+
+    // Track seen text to avoid duplicates (child elements often repeat parent text)
+    const seenText = new Set<string>(blocks); // Include already found blocks
+
+    $content.find(selectors).each((_, el) => {
       const name = (el as any).name?.toLowerCase?.();
 
       if (name === "img") {
@@ -46,9 +118,30 @@ function extractSanitizedBody(html: string): string {
 
         return;
       }
+
+      // For divs, only extract direct text content (not nested element text)
+      // This helps avoid duplicate content from parent/child relationships
+      if (name === "div") {
+        const directText = $(el)
+          .contents()
+          .filter((_, node) => node.type === "text")
+          .text()
+          .trim();
+
+        if (directText && directText.length > 2 && !seenText.has(directText)) {
+          seenText.add(directText);
+          blocks.push(directText);
+        }
+        return;
+      }
+
       const t = $(el).text().trim();
 
-      if (t) blocks.push(t);
+      // Skip if empty, too short, or already seen
+      if (t && t.length > 1 && !seenText.has(t)) {
+        seenText.add(t);
+        blocks.push(t);
+      }
     });
 
     return blocks
@@ -61,6 +154,8 @@ function extractSanitizedBody(html: string): string {
 }
 
 function buildExtractionPrompt(url: string | undefined, html: string): string {
+  console.log("Building extraction prompt");
+  console.log("RAW HTML:", html);
   const sanitized = extractSanitizedBody(html);
   const truncated = sanitized.slice(0, 50000);
 
@@ -90,7 +185,7 @@ export async function extractRecipeWithAI(
   const provider = await getAIProvider();
   const prompt = buildExtractionPrompt(url, html);
 
-  aiLogger.debug({ url, promptLength: prompt.length }, "Sending prompt to AI provider");
+  aiLogger.debug({ url, promptLength: prompt.length, prompt: prompt }, "Sending prompt to AI provider");
 
   const jsonLd = await provider.generateStructuredOutput<any>(
     prompt,
