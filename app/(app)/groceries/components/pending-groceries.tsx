@@ -1,9 +1,9 @@
 "use client";
 
 import { useCallback } from "react";
-import { AnimatePresence } from "framer-motion";
+import { AnimatePresence } from "motion/react";
 import { Accordion, AccordionItem, Button } from "@heroui/react";
-import { CheckIcon } from "@heroicons/react/16/solid";
+import { CheckIcon } from "@heroicons/react/20/solid";
 
 import { useGroceriesContext } from "../context";
 
@@ -44,7 +44,7 @@ function PendingGroceries({ groceries }: { groceries: GroceryDto[] }) {
             ))}
 
             {groceries.length === 0 && (
-              <p className="text-default-500 py-2 text-center text-sm">All done!</p>
+              <p className="text-default-500 py-2 text-center text-base">All done!</p>
             )}
           </AnimatePresence>
         </AccordionItem>

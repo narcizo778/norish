@@ -13,6 +13,7 @@ export type RecipeFilters = {
   tags?: string[];
   filterMode?: "AND" | "OR";
   sortMode?: "titleAsc" | "titleDesc" | "dateAsc" | "dateDesc";
+  minRating?: number;
 };
 
 type InfiniteRecipeData = InfiniteData<{
@@ -21,8 +22,6 @@ type InfiniteRecipeData = InfiniteData<{
   nextCursor: number | null;
 }>;
 
-// Key for storing pending recipe IDs in the query cache (shared state)
-// Using an array since Sets don't trigger React Query re-renders properly
 const PENDING_RECIPES_KEY = ["recipes", "pending"];
 
 export type RecipesQueryResult = {
@@ -37,11 +36,9 @@ export type RecipesQueryResult = {
   loadMore: () => void;
   addPendingRecipe: (id: string) => void;
   removePendingRecipe: (id: string) => void;
-  /** Update recipe data for the current query (with current filters) */
   setRecipesData: (
     updater: (prev: InfiniteRecipeData | undefined) => InfiniteRecipeData | undefined
   ) => void;
-  /** Update recipe data for ALL recipe list queries (all filter combinations) */
   setAllRecipesData: (
     updater: (prev: InfiniteRecipeData | undefined) => InfiniteRecipeData | undefined
   ) => void;
@@ -52,7 +49,7 @@ export function useRecipesQuery(filters: RecipeFilters = {}): RecipesQueryResult
   const trpc = useTRPC();
   const queryClient = useQueryClient();
 
-  const { search, tags, filterMode = "OR", sortMode = "dateDesc" } = filters;
+  const { search, tags, filterMode = "OR", sortMode = "dateDesc", minRating } = filters;
 
   // Use pending recipes from the query cache (shared across all hook instances)
   // Store as array to ensure React Query re-renders on changes
@@ -66,12 +63,10 @@ export function useRecipesQuery(filters: RecipeFilters = {}): RecipesQueryResult
     refetchOnReconnect: false,
   });
 
-  // Convert array to Set for the API
   const pendingRecipeIds = useMemo(() => new Set(pendingQuery.data ?? []), [pendingQuery.data]);
 
-  // Get the infinite query options to extract the proper query key
   const infiniteQueryOptions = trpc.recipes.list.infiniteQueryOptions(
-    { limit: 50, search, tags, filterMode, sortMode },
+    { limit: 50, search, tags, filterMode, sortMode, minRating },
     {
       getNextPageParam: (lastPage) => lastPage.nextCursor,
     }

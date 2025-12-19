@@ -14,7 +14,13 @@ import {
 import { useMutation } from "@tanstack/react-query";
 import { TRPCClientError } from "@trpc/client";
 
-import { useRecipeQuery, useRecipeSubscription } from "@/hooks/recipes";
+import {
+  useRecipeQuery,
+  useRecipeSubscription,
+  useNutritionQuery,
+  useNutritionMutation,
+  useNutritionSubscription,
+} from "@/hooks/recipes";
 import { useTRPC } from "@/app/providers/trpc-provider";
 
 type Ctx = {
@@ -24,9 +30,13 @@ type Ctx = {
   isNotFound: boolean;
   convertingTo: MeasurementSystem | null;
   adjustedIngredients: RecipeIngredientsDto[];
+  currentServings: number;
   setIngredientAmounts: (servings: number) => void;
   startConversion: (target: MeasurementSystem) => void;
   reset: () => void;
+  // Nutrition
+  isEstimatingNutrition: boolean;
+  estimateNutrition: () => void;
 };
 
 const RecipeContext = createContext<Ctx | null>(null);
@@ -44,6 +54,17 @@ export function RecipeContextProvider({ recipeId, children }: ProviderProps) {
 
   // Subscribe to real-time updates for this recipe
   useRecipeSubscription(recipeId);
+
+  // Nutrition hooks
+  const { isEstimating: isEstimatingNutrition, setIsEstimating: setIsEstimatingNutrition } =
+    useNutritionQuery(recipeId);
+  const { estimateNutrition } = useNutritionMutation(recipeId);
+
+  useNutritionSubscription(
+    recipeId,
+    () => setIsEstimatingNutrition(true),
+    () => setIsEstimatingNutrition(false)
+  );
 
   // Mutation for converting measurements
   const convertMutation = useMutation(trpc.recipes.convertMeasurements.mutationOptions());
@@ -125,9 +146,12 @@ export function RecipeContextProvider({ recipeId, children }: ProviderProps) {
       isNotFound,
       convertingTo,
       adjustedIngredients,
+      currentServings: _servings ?? recipe?.servings ?? 1,
       setIngredientAmounts,
       startConversion,
       reset,
+      isEstimatingNutrition,
+      estimateNutrition,
     }),
     [
       recipe,
@@ -136,9 +160,12 @@ export function RecipeContextProvider({ recipeId, children }: ProviderProps) {
       isNotFound,
       convertingTo,
       adjustedIngredients,
+      _servings,
       setIngredientAmounts,
       startConversion,
       reset,
+      isEstimatingNutrition,
+      estimateNutrition,
     ]
   );
 

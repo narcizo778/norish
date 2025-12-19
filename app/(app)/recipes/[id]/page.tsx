@@ -1,10 +1,11 @@
 "use client";
 
-import { use } from "react";
+import { use, useEffect } from "react";
 
 import RecipePageDesktop from "./recipe-page-desktop";
 import RecipePageMobile from "./recipe-page-mobile";
 import { RecipeContextProvider, useRecipeContext } from "./context";
+import { WakeLockProvider } from "./components/wake-lock-context";
 
 import RecipeSkeleton from "@/components/skeleton/recipe-skeleton";
 import { NotFoundView } from "@/components/shared/not-found-view";
@@ -15,6 +16,11 @@ type Props = {
 
 function RecipePageContent() {
   const { recipe, isLoading, isNotFound } = useRecipeContext();
+
+  // Scroll to top when recipe page mounts
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, []);
 
   // Show skeleton while loading
   if (isLoading) return <RecipeSkeleton />;
@@ -49,7 +55,9 @@ export default function RecipeDetailPage({ params }: Props) {
 
   return (
     <RecipeContextProvider recipeId={id}>
-      <RecipePageContent />
+      <WakeLockProvider>
+        <RecipePageContent />
+      </WakeLockProvider>
     </RecipeContextProvider>
   );
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useCallback, useMemo, useRef } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence } from "motion/react";
 import { XMarkIcon } from "@heroicons/react/16/solid";
 
 import { useTagsQuery } from "@/hooks/config";
@@ -70,10 +70,9 @@ export default function TagInput({
       allTags.forEach((tag) => {
         const tl = tag.toLowerCase();
 
-        // Skip if already seen, selected, or is exact match
+        // Skip if already seen or selected
         if (seenTags.has(tl)) return;
         if (value.some((sel) => sel.toLowerCase() === tl)) return;
-        if (tl === lower) return; // Exact matches don't go in suggestions
 
         // Must contain the word
         if (!tl.includes(lower)) return;
@@ -145,13 +144,17 @@ export default function TagInput({
         } else if (exactMatch) {
           e.preventDefault();
           handleAddTag(exactMatch, false); // Don't try to remove text for exact matches
+        } else if (suggestions.length > 0 && currentWord.trim()) {
+          // Auto-select first suggestion when pressing space
+          e.preventDefault();
+          handleAddTag(suggestions[0], true);
         }
       } else if (e.key === "Backspace" && !rawInput && value.length > 0) {
         e.preventDefault();
         handleRemoveTag(value[value.length - 1]);
       }
     },
-    [exactMatch, handleAddTag, rawInput, value, handleRemoveTag, currentWord]
+    [exactMatch, handleAddTag, rawInput, value, handleRemoveTag, currentWord, suggestions]
   );
 
   return (
@@ -205,11 +208,10 @@ export default function TagInput({
             {/* Non-matching typed words (potential new tags) */}
             {typedWords.map((word, idx) => {
               const lower = word.toLowerCase();
-              const isExact = exactMatch && lower === exactMatch.toLowerCase();
               const isInSuggestions = suggestions.some((s) => s.toLowerCase().includes(lower));
 
-              // Don't show if it's an exact match (already shown inline) or if it's in suggestions
-              if (isExact || isInSuggestions) return null;
+              // Don't show if it's in suggestions (avoid duplicates)
+              if (isInSuggestions) return null;
 
               return (
                 <motion.button

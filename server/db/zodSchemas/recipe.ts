@@ -31,9 +31,15 @@ export const AuthorSchema = z
 
 export const RecipeDashboardSchema = RecipeSelectBaseSchema.omit({
   systemUsed: true,
+  calories: true,
+  fat: true,
+  carbs: true,
+  protein: true,
 }).extend({
   tags: z.array(TagNameSchema).default([]),
   author: AuthorSchema,
+  averageRating: z.number().nullable().optional(),
+  ratingCount: z.number().optional(),
 });
 
 export const FullRecipeSchema = RecipeSelectBaseSchema.extend({
@@ -44,6 +50,7 @@ export const FullRecipeSchema = RecipeSelectBaseSchema.extend({
 });
 
 export const FullRecipeInsertSchema = RecipeInsertBaseSchema.extend({
+  id: z.uuid().optional(),
   recipeIngredients: z.array(RecipeIngredientInputSchema).default([]),
   tags: z.array(TagNameSchema).default([]),
   steps: z.array(StepStepSchema).default([]),
@@ -65,6 +72,7 @@ export const RecipeListInputSchema = z.object({
   tags: z.array(z.string()).optional(),
   filterMode: z.enum(["AND", "OR"]).default("OR"),
   sortMode: z.enum(["titleAsc", "titleDesc", "dateAsc", "dateDesc"]).default("dateDesc"),
+  minRating: z.number().min(1).max(5).optional(),
 });
 
 export const RecipeGetInputSchema = z.object({
@@ -87,4 +95,15 @@ export const RecipeConvertInputSchema = z.object({
 export const RecipeUpdateInputSchema = z.object({
   id: z.uuid(),
   data: FullRecipeUpdateSchema,
+});
+
+// Image import schemas
+export const OcrImportFileSchema = z.object({
+  data: z.string(), // base64 encoded
+  mimeType: z.string(),
+  filename: z.string(),
+});
+
+export const RecipeImageImportInputSchema = z.object({
+  files: z.array(OcrImportFileSchema).min(1).max(10),
 });

@@ -16,9 +16,12 @@ export default function AIConfigForm() {
   const [provider, setProvider] = useState(aiConfig?.provider ?? "openai");
   const [endpoint, setEndpoint] = useState(aiConfig?.endpoint ?? "");
   const [model, setModel] = useState(aiConfig?.model ?? "gpt-4o-mini");
+  const [visionModel, setVisionModel] = useState(aiConfig?.visionModel ?? "");
   const [apiKey, setApiKey] = useState("");
   const [temperature, setTemperature] = useState(aiConfig?.temperature ?? 0);
   const [maxTokens, setMaxTokens] = useState(aiConfig?.maxTokens ?? 10000);
+  const [autoTagAllergies, setAutoTagAllergies] = useState(aiConfig?.autoTagAllergies ?? true);
+  const [alwaysUseAI, setAlwaysUseAI] = useState(aiConfig?.alwaysUseAI ?? false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; error?: string } | null>(null);
   const [saving, setSaving] = useState(false);
@@ -29,8 +32,11 @@ export default function AIConfigForm() {
       setProvider(aiConfig.provider);
       setEndpoint(aiConfig.endpoint ?? "");
       setModel(aiConfig.model);
+      setVisionModel(aiConfig.visionModel ?? "");
       setTemperature(aiConfig.temperature);
       setMaxTokens(aiConfig.maxTokens);
+      setAutoTagAllergies(aiConfig.autoTagAllergies ?? true);
+      setAlwaysUseAI(aiConfig.alwaysUseAI ?? false);
     }
   }, [aiConfig]);
 
@@ -77,9 +83,12 @@ export default function AIConfigForm() {
         provider: provider as AIConfig["provider"],
         endpoint: endpoint || undefined,
         model,
+        visionModel: visionModel || undefined,
         apiKey: apiKey || undefined,
         temperature,
         maxTokens,
+        autoTagAllergies,
+        alwaysUseAI,
       });
     } finally {
       setSaving(false);
@@ -91,7 +100,7 @@ export default function AIConfigForm() {
       <div className="flex items-center justify-between">
         <div className="flex flex-col gap-1">
           <span className="font-medium">Enable AI Features</span>
-          <span className="text-default-500 text-sm">
+          <span className="text-default-500 text-base">
             Use AI to extract recipes from unstructured content
           </span>
         </div>
@@ -99,7 +108,7 @@ export default function AIConfigForm() {
       </div>
 
       {showValidationWarning && (
-        <div className="text-warning bg-warning/10 rounded-lg p-3 text-sm">
+        <div className="text-warning bg-warning/10 rounded-lg p-3 text-base">
           Configure the AI provider settings below to enable AI features.
         </div>
       )}
@@ -132,6 +141,15 @@ export default function AIConfigForm() {
         placeholder={provider === "openai" ? "gpt-4o-mini" : "llama3"}
         value={model}
         onValueChange={setModel}
+      />
+
+      <Input
+        description="Optional: Use a different model for image/vision tasks. Leave empty to use the model above."
+        isDisabled={!enabled}
+        label="Vision Model (Optional)"
+        placeholder={provider === "openai" ? "gpt-4o" : ""}
+        value={visionModel}
+        onValueChange={setVisionModel}
       />
 
       {needsApiKey && (
@@ -171,6 +189,36 @@ export default function AIConfigForm() {
         onValueChange={(v) => setMaxTokens(parseInt(v) || 10000)}
       />
 
+      <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-1">
+          <span className="font-medium">Auto-detect Allergy Tags</span>
+          <span className="text-default-500 text-base">
+            Automatically add allergy-related tags when importing recipes
+          </span>
+        </div>
+        <Switch
+          color="success"
+          isDisabled={!enabled}
+          isSelected={autoTagAllergies}
+          onValueChange={setAutoTagAllergies}
+        />
+      </div>
+
+      <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-1">
+          <span className="font-medium">Always Use AI Importing</span>
+          <span className="text-default-500 text-base">
+            Skip structured parsers and extract recipes using AI only
+          </span>
+        </div>
+        <Switch
+          color="success"
+          isDisabled={!enabled}
+          isSelected={alwaysUseAI}
+          onValueChange={setAlwaysUseAI}
+        />
+      </div>
+
       {testResult && (
         <div
           className={`flex items-center gap-2 rounded-lg p-2 ${
@@ -195,7 +243,7 @@ export default function AIConfigForm() {
         <Button
           isDisabled={!enabled}
           isLoading={testing}
-          startContent={<BeakerIcon className="h-4 w-4" />}
+          startContent={<BeakerIcon className="h-5 w-5" />}
           variant="flat"
           onPress={handleTest}
         >
@@ -205,7 +253,7 @@ export default function AIConfigForm() {
           color="primary"
           isDisabled={!canEnable}
           isLoading={saving}
-          startContent={<CheckIcon className="h-4 w-4" />}
+          startContent={<CheckIcon className="h-5 w-5" />}
           onPress={handleSave}
         >
           Save

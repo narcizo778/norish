@@ -49,6 +49,9 @@ export default function MembersCard() {
         title: "Failed to kick user",
         description: (error as Error).message,
         color: "danger",
+        timeout: 2000,
+        shouldShowTimeoutProgress: true,
+        radius: "full",
       });
     } finally {
       setShowKickModal(false);
@@ -61,12 +64,21 @@ export default function MembersCard() {
 
     try {
       await transferAdmin(household.id, userToTransfer.id);
-      addToast({ title: `Transferred admin to ${userToTransfer.name}`, color: "success" });
+      addToast({
+        title: `Transferred admin to ${userToTransfer.name}`,
+        color: "success",
+        timeout: 2000,
+        shouldShowTimeoutProgress: true,
+        radius: "full",
+      });
     } catch (error) {
       addToast({
         title: "Failed to transfer admin",
         description: (error as Error).message,
         color: "danger",
+        timeout: 2000,
+        shouldShowTimeoutProgress: true,
+        radius: "full",
       });
     } finally {
       setShowTransferModal(false);
@@ -78,7 +90,7 @@ export default function MembersCard() {
     <>
       <Card>
         <CardHeader>
-          <h2 className="flex items-center gap-2 text-xl font-semibold">
+          <h2 className="flex items-center gap-2 text-lg font-semibold">
             <UserGroupIcon className="h-5 w-5" />
             Members
           </h2>
@@ -165,7 +177,7 @@ export default function MembersCard() {
                   Are you sure you want to kick{" "}
                   <span className="font-semibold">{userToKick?.name}</span> from the household?
                 </p>
-                <p className="text-default-600 mt-2 text-sm">
+                <p className="text-default-600 mt-2 text-base">
                   They will lose access to all shared recipes, groceries, and calendar entries.
                 </p>
               </ModalBody>
@@ -193,7 +205,7 @@ export default function MembersCard() {
                   Are you sure you want to transfer admin privileges to{" "}
                   <span className="font-semibold">{userToTransfer?.name}</span>?
                 </p>
-                <p className="text-default-600 mt-2 text-sm">
+                <p className="text-default-600 mt-2 text-base">
                   You will become a regular member and will no longer be able to kick users or
                   manage join codes.
                 </p>

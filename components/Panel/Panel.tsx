@@ -10,10 +10,10 @@ import React, {
   createContext,
   useContext,
 } from "react";
-import { AnimatePresence, motion, useDragControls } from "framer-motion";
+import { AnimatePresence, motion, useDragControls } from "motion/react";
 import { createPortal } from "react-dom";
 import { Button } from "@heroui/react";
-import { XMarkIcon } from "@heroicons/react/16/solid";
+import { XMarkIcon } from "@heroicons/react/20/solid";
 
 import { useKeyboardOffset } from "@/hooks/use-keyboard-offset";
 

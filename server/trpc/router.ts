@@ -9,6 +9,8 @@ import { userRouter } from "./routers/user";
 import { caldavRouter, caldavSubscriptions } from "./routers/caldav";
 import { configRouter } from "./routers/config";
 import { archive } from "./routers/archive";
+import { favoritesRouter } from "./routers/favorites";
+import { ratingsRouter } from "./routers/ratings";
 
 export const appRouter = router({
   groceries: groceriesRouter,
@@ -22,6 +24,8 @@ export const appRouter = router({
   caldavSubscriptions: caldavSubscriptions,
   config: configRouter,
   archive,
+  favorites: favoritesRouter,
+  ratings: ratingsRouter,
 });
 
 // Export type definition of API

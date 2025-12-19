@@ -2,7 +2,7 @@
 
 import React, { useMemo, useCallback } from "react";
 import { Chip } from "@heroui/react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence } from "motion/react";
 
 import { useRecipesFiltersContext } from "@/context/recipes-filters-context";
 import { useTagsQuery } from "@/hooks/config";

@@ -1,11 +1,11 @@
 import { TRPCError } from "@trpc/server";
+import { z } from "zod";
 
 import { router } from "../../trpc";
 import { authedProcedure } from "../../middleware";
 import { emitByPolicy } from "../../helpers";
 
 import { recipeEmitter } from "./emitter";
-import { importRecipeFromUrl } from "./import";
 
 import { trpcLogger as log } from "@/server/logger";
 import {
@@ -18,6 +18,7 @@ import {
   dashboardRecipe,
   setActiveSystemForRecipe,
   addStepsAndIngredientsToRecipeByInput,
+  searchRecipesByName,
   FullRecipeInsertSchema,
   RecipeListInputSchema,
   RecipeGetInputSchema,
@@ -33,7 +34,14 @@ import {
   type PermissionAction,
 } from "@/server/auth/permissions";
 import { getRecipePermissionPolicy } from "@/config/server-config-loader";
+import {
+  addImportJob,
+  addImageImportJob,
+  addPasteImportJob,
+  addNutritionEstimationJob,
+} from "@/server/queue";
 import { FilterMode, SortOrder } from "@/types";
+import { MAX_RECIPE_PASTE_CHARS } from "@/types/uploads";
 
 interface UserContext {
   user: { id: string };
@@ -113,7 +121,7 @@ async function assertRecipeAccess(
 
 // Procedures
 const list = authedProcedure.input(RecipeListInputSchema).query(async ({ ctx, input }) => {
-  const { cursor, limit, search, tags, filterMode, sortMode } = input;
+  const { cursor, limit, search, tags, filterMode, sortMode, minRating } = input;
 
   log.debug({ userId: ctx.user.id, cursor, limit }, "Listing recipes");
 
@@ -130,7 +138,8 @@ const list = authedProcedure.input(RecipeListInputSchema).query(async ({ ctx, in
     search,
     tags,
     filterMode as FilterMode,
-    sortMode as SortOrder
+    sortMode as SortOrder,
+    minRating
   );
 
   log.debug({ count: result.recipes.length, total: result.total }, "Listed recipes");
@@ -172,9 +181,17 @@ const get = authedProcedure.input(RecipeGetInputSchema).query(async ({ ctx, inpu
 });
 
 const create = authedProcedure.input(FullRecipeInsertSchema).mutation(({ ctx, input }) => {
-  const recipeId = crypto.randomUUID();
+  const recipeId = input.id ?? crypto.randomUUID();
 
-  log.info({ userId: ctx.user.id, recipeName: input.name }, "Creating recipe");
+  log.info(
+    { userId: ctx.user.id, recipeName: input.name, recipeId, providedId: input.id },
+    "Creating recipe"
+  );
+  log.debug({ recipe: input }, "Full recipe data");
+
+  if (input.id && input.id !== recipeId) {
+    log.error({ inputId: input.id, generatedId: recipeId }, "Recipe ID mismatch detected!");
+  }
 
   createRecipeWithRefs(recipeId, ctx.user.id, input)
     .then(async (createdId) => {
@@ -209,6 +226,7 @@ const update = authedProcedure.input(RecipeUpdateInputSchema).mutation(({ ctx, i
   const { id, data } = input;
 
   log.info({ userId: ctx.user.id, recipeId: id }, "Updating recipe");
+  log.debug({ recipe: input }, "Full recipe data");
 
   assertRecipeAccess(ctx, id, "edit")
     .then(async () => {
@@ -262,15 +280,38 @@ const deleteProcedure = authedProcedure
   });
 
 const importFromUrlProcedure = authedProcedure
-  .input(RecipeImportInputSchema)
-  .mutation(({ ctx, input }) => {
-    const { url } = input;
+  .input(RecipeImportInputSchema.extend({ forceAI: z.boolean().optional() }))
+  .mutation(async ({ ctx, input }) => {
+    const { url, forceAI } = input;
     const recipeId = crypto.randomUUID();
 
-    importRecipeFromUrl({ userId: ctx.user.id, householdKey: ctx.householdKey }, recipeId, url);
+    // Add job to queue - returns conflict status if duplicate in queue
+    const result = await addImportJob({
+      url,
+      recipeId,
+      userId: ctx.user.id,
+      householdKey: ctx.householdKey,
+      householdUserIds: ctx.householdUserIds,
+      forceAI,
+    });
+
+    if (result.status === "exists" || result.status === "duplicate") {
+      throw new TRPCError({
+        code: "CONFLICT",
+        message: "This recipe is already exist or is being imported",
+      });
+    }
 
     return recipeId;
   });
+
+const reserveId = authedProcedure.query(() => {
+  const recipeId = crypto.randomUUID();
+
+  log.debug({ recipeId }, "Reserved recipe ID for step image uploads");
+
+  return { recipeId };
+});
 
 const convertMeasurements = authedProcedure
   .input(RecipeConvertInputSchema)
@@ -404,6 +445,167 @@ const convertMeasurements = authedProcedure
     return { success: true };
   });
 
+const autocomplete = authedProcedure
+  .input(z.object({ query: z.string().min(1).max(100) }))
+  .query(async ({ ctx, input }) => {
+    log.debug({ userId: ctx.user.id, query: input.query }, "Searching recipes for autocomplete");
+
+    const listCtx: RecipeListContext = {
+      userId: ctx.user.id,
+      householdUserIds: ctx.householdUserIds,
+      isServerAdmin: ctx.isServerAdmin,
+    };
+
+    const results = await searchRecipesByName(listCtx, input.query, 10);
+
+    return results;
+  });
+
+const importFromImagesProcedure = authedProcedure
+  .input(z.instanceof(FormData))
+  .mutation(async ({ ctx, input }) => {
+    const files: Array<{ data: string; mimeType: string; filename: string }> = [];
+
+    // Process files from FormData
+    for (const [key, value] of input.entries()) {
+      if (key.startsWith("file") && value instanceof File) {
+        const buffer = Buffer.from(await value.arrayBuffer());
+        const base64 = buffer.toString("base64");
+
+        files.push({
+          data: base64,
+          mimeType: value.type,
+          filename: value.name,
+        });
+      }
+    }
+
+    if (files.length === 0) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: "No files provided",
+      });
+    }
+
+    const recipeId = crypto.randomUUID();
+
+    log.info(
+      { userId: ctx.user.id, fileCount: files.length, recipeId },
+      "Processing image import request"
+    );
+
+    const result = await addImageImportJob({
+      recipeId,
+      userId: ctx.user.id,
+      householdKey: ctx.householdKey,
+      householdUserIds: ctx.householdUserIds,
+      files,
+    });
+
+    if (result.status === "duplicate") {
+      throw new TRPCError({
+        code: "CONFLICT",
+        message: "This import is already in progress",
+      });
+    }
+
+    return recipeId;
+  });
+
+const importFromPasteProcedure = authedProcedure
+  .input(
+    z.object({
+      text: z.string().min(1).max(MAX_RECIPE_PASTE_CHARS),
+      forceAI: z.boolean().optional(),
+    })
+  )
+  .mutation(async ({ ctx, input }) => {
+    const recipeId = crypto.randomUUID();
+
+    log.info(
+      { userId: ctx.user.id, recipeId, textLength: input.text.length },
+      "Processing paste import request"
+    );
+
+    const result = await addPasteImportJob({
+      recipeId,
+      userId: ctx.user.id,
+      householdKey: ctx.householdKey,
+      householdUserIds: ctx.householdUserIds,
+      text: input.text,
+      forceAI: input.forceAI,
+    });
+
+    if (result.status === "duplicate") {
+      throw new TRPCError({
+        code: "CONFLICT",
+        message: "This import is already in progress",
+      });
+    }
+
+    return recipeId;
+  });
+
+const estimateNutrition = authedProcedure
+  .input(z.object({ recipeId: z.uuid() }))
+  .mutation(async ({ ctx, input }) => {
+    const { recipeId } = input;
+
+    log.info({ userId: ctx.user.id, recipeId }, "Queueing nutrition estimation for recipe");
+
+    const aiEnabled = await checkAIEnabled();
+
+    if (!aiEnabled) {
+      throw new TRPCError({
+        code: "PRECONDITION_FAILED",
+        message: "AI features are disabled",
+      });
+    }
+
+    const recipe = await getRecipeFull(recipeId);
+
+    if (!recipe) {
+      throw new TRPCError({
+        code: "NOT_FOUND",
+        message: "Recipe not found",
+      });
+    }
+
+    if (recipe.recipeIngredients.length === 0) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: "Recipe has no ingredients to estimate from",
+      });
+    }
+
+    // Add to queue for background processing
+    const result = await addNutritionEstimationJob({
+      recipeId,
+      userId: ctx.user.id,
+      householdKey: ctx.householdKey,
+      householdUserIds: ctx.householdUserIds,
+    });
+
+    if (result.status === "duplicate") {
+      throw new TRPCError({
+        code: "CONFLICT",
+        message: "Nutrition estimation is already in progress for this recipe",
+      });
+    }
+
+    const policy = await getRecipePermissionPolicy();
+
+    emitByPolicy(
+      recipeEmitter,
+      policy.view,
+      { userId: ctx.user.id, householdKey: ctx.householdKey },
+      "nutritionStarted",
+      { recipeId }
+    );
+
+    return { success: true };
+  });
+
 export const recipesProcedures = router({
   list,
   get,
@@ -411,5 +613,10 @@ export const recipesProcedures = router({
   update,
   delete: deleteProcedure,
   importFromUrl: importFromUrlProcedure,
+  importFromImages: importFromImagesProcedure,
+  importFromPaste: importFromPasteProcedure,
   convertMeasurements,
+  estimateNutrition,
+  reserveId,
+  autocomplete,
 });

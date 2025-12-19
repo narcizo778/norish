@@ -135,8 +135,23 @@ export async function attachTagsToRecipeByInputTx(
   recipeId: string,
   tagNames: string[]
 ): Promise<void> {
+  // Delete existing tags for this recipe first
+  await tx.delete(recipeTags).where(eq(recipeTags.recipeId, recipeId));
+
+  if (!tagNames.length) return;
+
   const created = await getOrCreateManyTagsTx(tx, tagNames);
   const ids = created.map((t) => t.id);
 
   await attachTagsToRecipeTx(tx, recipeId, ids);
+}
+
+export async function getRecipeTagNames(recipeId: string): Promise<string[]> {
+  const rows = await db
+    .select({ name: tags.name })
+    .from(recipeTags)
+    .innerJoin(tags, eq(recipeTags.tagId, tags.id))
+    .where(eq(recipeTags.recipeId, recipeId));
+
+  return rows.map((r) => r.name);
 }

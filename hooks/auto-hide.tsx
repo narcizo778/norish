@@ -1,6 +1,6 @@
 "use client";
 
-import { useScroll, useMotionValueEvent } from "framer-motion";
+import { useScroll, useMotionValueEvent } from "motion/react";
 import { useRef, useState, useEffect, useCallback } from "react";
 
 interface AutoHideOptions {
@@ -123,6 +123,17 @@ export function useAutoHide({
       if (latest > topOffset) hide();
     }, idleDelay);
   });
+
+  // Clear timeout and stay visible when disabled
+  useEffect(() => {
+    if (disabled) {
+      if (scrollTimeout.current) {
+        clearTimeout(scrollTimeout.current);
+        scrollTimeout.current = null;
+      }
+      setIsVisible(true);
+    }
+  }, [disabled]);
 
   useEffect(() => {
     return () => {

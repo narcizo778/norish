@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 import { Button } from "@heroui/react";
-import { PlusIcon } from "@heroicons/react/16/solid";
-import { motion } from "framer-motion";
+import { PlusIcon } from "@heroicons/react/20/solid";
+import { motion } from "motion/react";
 
 import { useGroceriesContext } from "../context";
 

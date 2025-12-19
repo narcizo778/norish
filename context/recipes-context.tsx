@@ -7,6 +7,8 @@ import { useRouter } from "next/navigation";
 import { RecipeDashboardDTO, FullRecipeInsertDTO, FullRecipeUpdateDTO } from "@/types";
 import { useRecipesFiltersContext } from "@/context/recipes-filters-context";
 import { useRecipesQuery, useRecipesMutations, useRecipesSubscription } from "@/hooks/recipes";
+import { useFavoritesQuery } from "@/hooks/favorites";
+import { useRatingsSubscription } from "@/hooks/ratings";
 
 type Ctx = {
   // Data
@@ -19,6 +21,7 @@ type Ctx = {
   // Actions (all void - fire and forget)
   loadMore: () => void;
   importRecipe: (url: string) => void;
+  importRecipeWithAI: (url: string) => void;
   createRecipe: (input: FullRecipeInsertDTO) => void;
   updateRecipe: (id: string, input: FullRecipeUpdateDTO) => void;
   deleteRecipe: (id: string) => void;
@@ -40,22 +43,44 @@ export function RecipesContextProvider({ children }: { children: ReactNode }) {
       tags: filters.searchTags.length > 0 ? filters.searchTags : undefined,
       filterMode: filters.filterMode as "AND" | "OR",
       sortMode: filters.sortMode as "titleAsc" | "titleDesc" | "dateAsc" | "dateDesc",
+      minRating: filters.minRating ?? undefined,
     }),
     [filters]
   );
 
-  const { recipes, total, isLoading, hasMore, loadMore, pendingRecipeIds, invalidate } =
-    useRecipesQuery(queryFilters);
+  const {
+    recipes: allRecipes,
+    total: serverTotal,
+    isLoading,
+    hasMore,
+    loadMore,
+    pendingRecipeIds,
+    invalidate,
+  } = useRecipesQuery(queryFilters);
+
+  const { favoriteIds, isLoading: isFavoritesLoading } = useFavoritesQuery();
+
+  const { recipes, total } = useMemo(() => {
+    if (!filters.showFavoritesOnly) {
+      return { recipes: allRecipes, total: serverTotal };
+    }
+    const favoriteSet = new Set(favoriteIds);
+    const filtered = allRecipes.filter((r) => favoriteSet.has(r.id));
+
+    return { recipes: filtered, total: filtered.length };
+  }, [allRecipes, serverTotal, filters.showFavoritesOnly, favoriteIds]);
 
   const {
     importRecipe: importRecipeMutation,
+    importRecipeWithAI: importRecipeWithAIMutation,
     createRecipe: createRecipeMutation,
     updateRecipe: updateRecipeMutation,
     deleteRecipe,
   } = useRecipesMutations();
 
-  // Subscribe to recipe events
+  // Subscribe to recipe and rating events
   useRecipesSubscription();
+  useRatingsSubscription();
 
   const importRecipe = useCallback(
     (url: string): void => {
@@ -63,12 +88,32 @@ export function RecipesContextProvider({ children }: { children: ReactNode }) {
         severity: "default",
         title: "Importing recipe...",
         description: "Import in progress, please wait...",
+        timeout: 2000,
+        shouldShowTimeoutProgress: true,
+        radius: "full",
       });
 
       importRecipeMutation(url);
       router.push("/");
     },
     [importRecipeMutation, router]
+  );
+
+  const importRecipeWithAI = useCallback(
+    (url: string): void => {
+      addToast({
+        severity: "default",
+        title: "Importing recipe with AI...",
+        description: "Import in progress, please wait...",
+        timeout: 2000,
+        shouldShowTimeoutProgress: true,
+        radius: "full",
+      });
+
+      importRecipeWithAIMutation(url);
+      router.push("/");
+    },
+    [importRecipeWithAIMutation, router]
   );
 
   const createRecipe = useCallback(
@@ -91,11 +136,12 @@ export function RecipesContextProvider({ children }: { children: ReactNode }) {
     () => ({
       recipes,
       total,
-      isLoading,
+      isLoading: isLoading || isFavoritesLoading,
       hasMore,
       pendingRecipeIds,
       loadMore,
       importRecipe,
+      importRecipeWithAI,
       createRecipe,
       updateRecipe,
       deleteRecipe,
@@ -105,10 +151,12 @@ export function RecipesContextProvider({ children }: { children: ReactNode }) {
       recipes,
       total,
       isLoading,
+      isFavoritesLoading,
       hasMore,
       pendingRecipeIds,
       loadMore,
       importRecipe,
+      importRecipeWithAI,
       createRecipe,
       updateRecipe,
       deleteRecipe,

@@ -1,9 +1,29 @@
 import type { TypedEmitter } from "./emitter";
 import type { PermissionLevel } from "@/server/db/zodSchemas/server-config";
 
-import { on } from "events";
+import { authedProcedure } from "./middleware";
 
 import { trpcLogger as log } from "@/server/logger";
+
+/**
+ * Wait for the abort signal to fire.
+ * Use this in subscriptions that can't proceed (e.g., no household)
+ * but need to stay "active" so they restart on reconnection.
+ *
+ * @example
+ * ```ts
+ * if (!ctx.household) {
+ *   await waitForAbort(signal);
+ *   return;
+ * }
+ * ```
+ */
+export async function waitForAbort(signal?: AbortSignal): Promise<void> {
+  if (!signal) return;
+  await new Promise<void>((_, reject) => {
+    signal.addEventListener("abort", () => reject(new Error("Aborted")));
+  }).catch(() => {});
+}
 
 /**
  * Context for policy-based event emission.
@@ -61,11 +81,8 @@ export function emitByPolicy<
  *
  * @example
  * ```ts
- * const householdIterable = on(emitter, householdEvent, { signal });
- * const broadcastIterable = on(emitter, broadcastEvent, { signal });
- * const userIterable = on(emitter, userEvent, { signal });
- *
- * for await (const [data] of mergeAsyncIterables([householdIterable, broadcastIterable, userIterable], signal)) {
+ * const iterables = createPolicyAwareIterables(emitter, ctx, "imported", signal);
+ * for await (const data of mergeAsyncIterables(iterables, signal)) {
  *   yield data;
  * }
  * ```
@@ -114,7 +131,7 @@ export async function* mergeAsyncIterables<T>(
  * @example
  * ```ts
  * const iterables = createPolicyAwareIterables(recipeEmitter, ctx, "imported", signal);
- * for await (const [data] of mergeAsyncIterables(iterables, signal)) {
+ * for await (const data of mergeAsyncIterables(iterables, signal)) {
  *   yield data as RecipeSubscriptionEvents["imported"];
  * }
  * ```
@@ -124,19 +141,46 @@ export function createPolicyAwareIterables<TEvents extends Record<string, unknow
   ctx: PolicyEmitContext,
   event: keyof TEvents & string,
   signal?: AbortSignal
-): AsyncIterable<unknown[]>[] {
+): AsyncIterable<TEvents[typeof event]>[] {
   const householdEventName = emitter.householdEvent(ctx.householdKey, event);
   const broadcastEventName = emitter.broadcastEvent(event);
   const userEventName = emitter.userEvent(ctx.userId, event);
 
-  log.debug(
+  log.trace(
     { event, householdEventName, broadcastEventName, userEventName },
     "Creating policy-aware iterables"
   );
 
   return [
-    on(emitter, householdEventName, { signal }),
-    on(emitter, broadcastEventName, { signal }),
-    on(emitter, userEventName, { signal }),
+    emitter.createSubscription(householdEventName, signal),
+    emitter.createSubscription(broadcastEventName, signal),
+    emitter.createSubscription(userEventName, signal),
   ];
+}
+
+export function createPolicyAwareSubscription<
+  TEvents extends Record<string, unknown>,
+  K extends keyof TEvents & string,
+>(emitter: TypedEmitter<TEvents>, eventName: K, logMessage: string) {
+  return authedProcedure.subscription(async function* ({ ctx, signal }) {
+    const policyCtx = { userId: ctx.user.id, householdKey: ctx.householdKey };
+
+    log.trace(
+      { userId: ctx.user.id, householdKey: ctx.householdKey },
+      `Subscribed to ${logMessage}`
+    );
+
+    try {
+      const iterables = createPolicyAwareIterables(emitter, policyCtx, eventName, signal);
+
+      for await (const data of mergeAsyncIterables(iterables, signal)) {
+        yield data as TEvents[K];
+      }
+    } finally {
+      log.trace(
+        { userId: ctx.user.id, householdKey: ctx.householdKey },
+        `Unsubscribed from ${logMessage}`
+      );
+    }
+  });
 }

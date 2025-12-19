@@ -1,6 +1,6 @@
 "use client";
 
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence } from "motion/react";
 import { Accordion, AccordionItem, Checkbox, Button, Divider } from "@heroui/react";
 import { TrashIcon } from "@heroicons/react/20/solid";
 
@@ -51,7 +51,7 @@ export default function DoneGroceries({ groceries }: { groceries: GroceryDto[] }
           }
         >
           {groceries.length === 0 && (
-            <p className="text-default-500 py-2 text-center text-sm">All done!</p>
+            <p className="text-default-500 py-2 text-center text-base">All done!</p>
           )}
 
           <AnimatePresence>

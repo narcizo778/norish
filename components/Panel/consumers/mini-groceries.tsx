@@ -42,9 +42,23 @@ function MiniGroceriesContent({
 
   useEffect(() => {
     if (ingredients.length > 0) {
-      setSelectedIds(ingredients.map((i) => i.ingredientId!).filter(Boolean));
+      // Filter out headings and recipe links
+      const filteredIngredients = ingredients.filter((i) => {
+        const name = i.ingredientName?.trim() ?? "";
+
+        // Skip headings
+        if (name.startsWith("#")) return false;
+        // Skip recipe links
+        if (name.includes("(id:") || name.includes("/recipe:")) return false;
+        // Skip empty ingredient names
+        if (!name || !i.ingredientId) return false;
+
+        return true;
+      });
+
+      setSelectedIds(filteredIngredients.map((i) => i.ingredientId!).filter(Boolean));
       setLocalIngredients(
-        ingredients.map((i) => ({
+        filteredIngredients.map((i) => ({
           ingredientId: i.ingredientId!,
           ingredientName: i.ingredientName,
           amount: i.amount?.toString() ?? null,
@@ -89,6 +103,9 @@ function MiniGroceriesContent({
       addToast({
         severity: "warning",
         title: "Could not parse ingredient. Keeping original.",
+        timeout: 2000,
+        shouldShowTimeoutProgress: true,
+        radius: "full",
       });
     }
 
@@ -113,24 +130,30 @@ function MiniGroceriesContent({
         addToast({
           severity: "success",
           title: "Ingredients added to grocery list.",
+          timeout: 2000,
+          shouldShowTimeoutProgress: true,
+          radius: "full",
         });
       })
       .catch(() => {
         addToast({
           severity: "warning",
           title: "Failed to add ingredients to grocery list.",
+          timeout: 2000,
+          shouldShowTimeoutProgress: true,
+          radius: "full",
         });
       });
   };
 
   if (isLoading) {
-    return <div className="text-default-500 p-4 text-sm">Loading ingredients…</div>;
+    return <div className="text-default-500 p-4 text-base">Loading ingredients…</div>;
   }
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {localIngredients.length === 0 ? (
-        <div className="text-default-500 flex flex-1 items-center justify-center text-sm">
+        <div className="text-default-500 flex flex-1 items-center justify-center text-base">
           No ingredients.
         </div>
       ) : (
@@ -181,7 +204,7 @@ function MiniGroceriesContent({
                         {item.ingredientName}
                       </span>
                       {item.amount && (
-                        <span className="text-primary mt-[-3px] text-sm font-medium">
+                        <span className="text-primary mt-[-3px] text-xs font-medium">
                           {item.amount} {item.unit ?? ""}
                         </span>
                       )}
@@ -198,7 +221,7 @@ function MiniGroceriesContent({
         <div className="mt-4">
           <Divider className="bg-default-200/40 my-2" />
           <button
-            className="bg-primary text-primary-foreground w-full rounded-md py-2 text-sm font-semibold transition hover:opacity-90"
+            className="bg-primary text-primary-foreground w-full rounded-md py-2 text-xs font-semibold transition hover:opacity-90"
             onClick={handleConfirm}
           >
             Add selected to groceries

@@ -1,7 +1,5 @@
 import type { PermissionsSubscriptionEvents } from "./types";
 
-import { on } from "events";
-
 import { router } from "../../trpc";
 import { authedProcedure } from "../../middleware";
 import { mergeAsyncIterables } from "../../helpers";
@@ -16,18 +14,18 @@ const onPolicyUpdated = authedProcedure.subscription(async function* ({ ctx, sig
   const broadcastEventName = permissionsEmitter.broadcastEvent("policyUpdated");
   const userEventName = permissionsEmitter.userEvent(ctx.user.id, "policyUpdated");
 
-  log.debug({ userId: ctx.user.id }, "Subscribed to permission policy updates");
+  log.trace({ userId: ctx.user.id }, "Subscribed to permission policy updates");
 
   try {
     // Merge both event sources
-    const broadcastIterable = on(permissionsEmitter, broadcastEventName, { signal });
-    const userIterable = on(permissionsEmitter, userEventName, { signal });
+    const broadcastIterable = permissionsEmitter.createSubscription(broadcastEventName, signal);
+    const userIterable = permissionsEmitter.createSubscription(userEventName, signal);
 
-    for await (const [data] of mergeAsyncIterables([broadcastIterable, userIterable], signal)) {
+    for await (const data of mergeAsyncIterables([broadcastIterable, userIterable], signal)) {
       yield data as PermissionsSubscriptionEvents["policyUpdated"];
     }
   } finally {
-    log.debug({ userId: ctx.user.id }, "Unsubscribed from permission policy updates");
+    log.trace({ userId: ctx.user.id }, "Unsubscribed from permission policy updates");
   }
 });
 

@@ -15,9 +15,6 @@ export const jsonLdRecipeSchema = {
       description: {
         anyOf: [{ type: "string" }, { type: "null" }],
       },
-      image: {
-        anyOf: [{ type: "string" }, { type: "null" }],
-      },
       recipeYield: {
         anyOf: [{ type: "string" }, { type: "number" }, { type: "null" }],
       },
@@ -60,19 +57,39 @@ export const jsonLdRecipeSchema = {
         required: ["metric", "us"],
         additionalProperties: false,
       },
+      keywords: {
+        anyOf: [{ type: "array", items: { type: "string" } }, { type: "null" }],
+      },
+      nutrition: {
+        anyOf: [
+          {
+            type: "object",
+            properties: {
+              calories: { anyOf: [{ type: "number" }, { type: "null" }] },
+              fatContent: { anyOf: [{ type: "number" }, { type: "null" }] },
+              carbohydrateContent: { anyOf: [{ type: "number" }, { type: "null" }] },
+              proteinContent: { anyOf: [{ type: "number" }, { type: "null" }] },
+            },
+            required: ["calories", "fatContent", "carbohydrateContent", "proteinContent"],
+            additionalProperties: false,
+          },
+          { type: "null" },
+        ],
+      },
     },
     required: [
       "@context",
       "@type",
       "name",
       "description",
-      "image",
       "recipeYield",
       "prepTime",
       "cookTime",
       "totalTime",
       "recipeIngredient",
       "recipeInstructions",
+      "keywords",
+      "nutrition",
     ],
     additionalProperties: false,
   },

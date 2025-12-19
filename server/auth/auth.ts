@@ -14,6 +14,7 @@ import {
   getCachedPasswordAuthEnabled,
 } from "./provider-cache";
 
+import { getPublisherClient } from "@/server/redis/client";
 import { db } from "@/server/db/drizzle";
 import { SERVER_CONFIG } from "@/config/env-config-server";
 import { AUTH_SECRET, encrypt, hmacIndex, safeDecrypt } from "@/server/auth/crypto";
@@ -179,6 +180,34 @@ function createAuth() {
           ]
         : []),
     ],
+    secondaryStorage: {
+      get: async (key: string) => {
+        const redis = await getPublisherClient();
+
+        return redis.get(key);
+      },
+      set: async (key: string, value: string, ttl?: number) => {
+        const redis = await getPublisherClient();
+
+        if (ttl) {
+          await redis.setex(key, ttl, value);
+        } else {
+          await redis.set(key, value);
+        }
+      },
+      delete: async (key: string) => {
+        const redis = await getPublisherClient();
+
+        await redis.del(key);
+      },
+    },
+    // Rate limiting configuration
+    rateLimit: {
+      enabled: true,
+      window: 60, // 60 seconds
+      max: 20, // 20 requests per window
+      storage: "secondary-storage",
+    },
     // Email and password authentication (conditionally enabled)
     ...(emailAndPasswordConfig && { emailAndPassword: emailAndPasswordConfig }),
     user: {

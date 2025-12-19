@@ -1,56 +1,28 @@
-import type { RecipeSubscriptionEvents } from "./types";
-
 import { router } from "../../trpc";
-import { authedProcedure } from "../../middleware";
-import { mergeAsyncIterables, createPolicyAwareIterables } from "../../helpers";
+import { createPolicyAwareSubscription } from "../../helpers";
 
 import { recipeEmitter } from "./emitter";
 
-import { trpcLogger as log } from "@/server/logger";
-
-/**
- * Helper to create a policy-aware subscription that listens to all three event channels
- */
-function createPolicyAwareSubscription<K extends keyof RecipeSubscriptionEvents & string>(
-  eventName: K,
-  logMessage: string
-) {
-  return authedProcedure.subscription(async function* ({ ctx, signal }) {
-    const policyCtx = { userId: ctx.user.id, householdKey: ctx.householdKey };
-
-    log.debug(
-      { userId: ctx.user.id, householdKey: ctx.householdKey },
-      `Subscribed to ${logMessage}`
-    );
-
-    try {
-      const iterables = createPolicyAwareIterables(recipeEmitter, policyCtx, eventName, signal);
-
-      for await (const [data] of mergeAsyncIterables(iterables, signal)) {
-        yield data as RecipeSubscriptionEvents[K];
-      }
-    } finally {
-      log.debug(
-        { userId: ctx.user.id, householdKey: ctx.householdKey },
-        `Unsubscribed from ${logMessage}`
-      );
-    }
-  });
-}
-
-const onCreated = createPolicyAwareSubscription("created", "recipe created events");
+const onCreated = createPolicyAwareSubscription(recipeEmitter, "created", "recipe created");
 const onImportStarted = createPolicyAwareSubscription(
+  recipeEmitter,
   "importStarted",
-  "recipe import started events"
+  "recipe import started"
 );
-const onImported = createPolicyAwareSubscription("imported", "recipe imported events");
-const onUpdated = createPolicyAwareSubscription("updated", "recipe updated events");
-const onDeleted = createPolicyAwareSubscription("deleted", "recipe deleted events");
-const onConverted = createPolicyAwareSubscription("converted", "recipe converted events");
-const onFailed = createPolicyAwareSubscription("failed", "recipe failed events");
+const onImported = createPolicyAwareSubscription(recipeEmitter, "imported", "recipe imported");
+const onUpdated = createPolicyAwareSubscription(recipeEmitter, "updated", "recipe updated");
+const onDeleted = createPolicyAwareSubscription(recipeEmitter, "deleted", "recipe deleted");
+const onConverted = createPolicyAwareSubscription(recipeEmitter, "converted", "recipe converted");
+const onFailed = createPolicyAwareSubscription(recipeEmitter, "failed", "recipe failed");
+const onNutritionStarted = createPolicyAwareSubscription(
+  recipeEmitter,
+  "nutritionStarted",
+  "nutrition estimation started"
+);
 const onRecipeBatchCreated = createPolicyAwareSubscription(
+  recipeEmitter,
   "recipeBatchCreated",
-  "recipe batch created events"
+  "recipe batch created"
 );
 
 export const recipesSubscriptions = router({
@@ -61,5 +33,6 @@ export const recipesSubscriptions = router({
   onDeleted,
   onConverted,
   onFailed,
+  onNutritionStarted,
   onRecipeBatchCreated,
 });

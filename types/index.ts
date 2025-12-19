@@ -12,8 +12,7 @@ export type * from "@/types/dto/recipe-ingredient";
 export type * from "@/types/dto/caldav-config";
 export type * from "@/types/dto/caldav-sync-status";
 export type * from "@/types/dto/auth";
-
-// Export upload types
+export type * from "@/types/dto/queue";
+export type * from "@/types/dto/favorites";
 export * from "@/types/uploads";
-
 export type * from "@/types/store-types";

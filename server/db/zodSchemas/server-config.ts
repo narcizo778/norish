@@ -81,9 +81,14 @@ export type ContentIndicatorsConfig = z.infer<typeof ContentIndicatorsSchema>;
 export const PromptsConfigSchema = z.object({
   recipeExtraction: z.string(),
   unitConversion: z.string(),
+  nutritionEstimation: z.string(),
+  isOverridden: z.boolean().default(false),
 });
 
 export type PromptsConfig = z.infer<typeof PromptsConfigSchema>;
+
+export const PromptsConfigInputSchema = PromptsConfigSchema.omit({ isOverridden: true });
+export type PromptsConfigInput = z.infer<typeof PromptsConfigInputSchema>;
 
 // ============================================================================
 // Units Schema
@@ -140,9 +145,12 @@ export const AIConfigSchema = z.object({
   provider: AIProviderSchema,
   endpoint: z.url("Endpoint must be a valid URL").optional(),
   model: z.string().min(1, "Model is required"),
+  visionModel: z.string().optional(), // Optional: separate model for vision/image tasks
   apiKey: z.string().optional(),
   temperature: z.number().min(0).max(2),
   maxTokens: z.number().int().positive(),
+  autoTagAllergies: z.boolean().default(true),
+  alwaysUseAI: z.boolean().default(false),
 });
 
 export type AIConfig = z.infer<typeof AIConfigSchema>;

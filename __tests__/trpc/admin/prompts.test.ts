@@ -9,6 +9,7 @@ vi.mock("@/server/ai/prompts/loader", () => ({
   loadDefaultPrompts: vi.fn().mockReturnValue({
     recipeExtraction: "Default recipe extraction prompt",
     unitConversion: "Default unit conversion prompt",
+    nutritionEstimation: "Default nutrition estimation prompt",
   }),
 }));
 
@@ -27,7 +28,9 @@ import { loadDefaultPrompts } from "@/server/ai/prompts/loader";
 import {
   ServerConfigKeys,
   PromptsConfigSchema,
+  PromptsConfigInputSchema,
   type PromptsConfig,
+  type PromptsConfigInput,
 } from "@/server/db/zodSchemas/server-config";
 
 // Create a test tRPC instance
@@ -70,6 +73,8 @@ describe("prompts procedures", () => {
       const mockPrompts: PromptsConfig = {
         recipeExtraction: "Custom extraction prompt",
         unitConversion: "Custom conversion prompt",
+        nutritionEstimation: "Custom nutrition estimation prompt",
+        isOverridden: true,
       };
 
       getConfig.mockResolvedValue(mockPrompts);
@@ -96,6 +101,7 @@ describe("prompts procedures", () => {
       const defaultPrompts = {
         recipeExtraction: "Default recipe extraction prompt",
         unitConversion: "Default unit conversion prompt",
+        nutritionEstimation: "Default nutrition estimation prompt",
       };
 
       getConfig.mockResolvedValue(null);
@@ -136,19 +142,27 @@ describe("prompts procedures", () => {
   describe("updatePrompts", () => {
     it("updates prompts for admin users", async () => {
       const ctx = createMockAdminContext(mockAdmin);
-      const newPrompts: PromptsConfig = {
+      const newPrompts: PromptsConfigInput = {
         recipeExtraction: "Updated extraction prompt",
         unitConversion: "Updated conversion prompt",
+        nutritionEstimation: "Updated nutrition estimation prompt",
       };
 
       setConfig.mockResolvedValue(undefined);
 
       const testRouter = t.router({
-        updatePrompts: adminProcedure.input(PromptsConfigSchema).mutation(async ({ input }) => {
-          await setConfig(ServerConfigKeys.PROMPTS, input, ctx.user.id, false);
+        updatePrompts: adminProcedure
+          .input(PromptsConfigInputSchema)
+          .mutation(async ({ input }) => {
+            await setConfig(
+              ServerConfigKeys.PROMPTS,
+              { ...input, isOverridden: true },
+              ctx.user.id,
+              false
+            );
 
-          return { success: true };
-        }),
+            return { success: true };
+          }),
       });
 
       const caller = t.createCallerFactory(testRouter)(ctx);
@@ -157,7 +171,7 @@ describe("prompts procedures", () => {
       expect(result).toEqual({ success: true });
       expect(setConfig).toHaveBeenCalledWith(
         ServerConfigKeys.PROMPTS,
-        newPrompts,
+        { ...newPrompts, isOverridden: true },
         mockAdmin.id,
         false
       );
@@ -165,17 +179,25 @@ describe("prompts procedures", () => {
 
     it("throws FORBIDDEN for non-admin users", async () => {
       const ctx = createMockAuthedContext(mockUser);
-      const newPrompts: PromptsConfig = {
+      const newPrompts: PromptsConfigInput = {
         recipeExtraction: "Updated extraction prompt",
         unitConversion: "Updated conversion prompt",
+        nutritionEstimation: "Updated nutrition estimation prompt",
       };
 
       const testRouter = t.router({
-        updatePrompts: adminProcedure.input(PromptsConfigSchema).mutation(async ({ input }) => {
-          await setConfig(ServerConfigKeys.PROMPTS, input, ctx.user.id, false);
+        updatePrompts: adminProcedure
+          .input(PromptsConfigInputSchema)
+          .mutation(async ({ input }) => {
+            await setConfig(
+              ServerConfigKeys.PROMPTS,
+              { ...input, isOverridden: true },
+              ctx.user.id,
+              false
+            );
 
-          return { success: true };
-        }),
+            return { success: true };
+          }),
       });
 
       const caller = t.createCallerFactory(testRouter)(ctx);
@@ -187,11 +209,18 @@ describe("prompts procedures", () => {
       const ctx = createMockAdminContext(mockAdmin);
 
       const testRouter = t.router({
-        updatePrompts: adminProcedure.input(PromptsConfigSchema).mutation(async ({ input }) => {
-          await setConfig(ServerConfigKeys.PROMPTS, input, ctx.user.id, false);
+        updatePrompts: adminProcedure
+          .input(PromptsConfigInputSchema)
+          .mutation(async ({ input }) => {
+            await setConfig(
+              ServerConfigKeys.PROMPTS,
+              { ...input, isOverridden: true },
+              ctx.user.id,
+              false
+            );
 
-          return { success: true };
-        }),
+            return { success: true };
+          }),
       });
 
       const caller = t.createCallerFactory(testRouter)(ctx);
@@ -209,6 +238,7 @@ describe("prompts procedures", () => {
       const defaultPrompts = {
         recipeExtraction: "Default recipe extraction prompt",
         unitConversion: "Default unit conversion prompt",
+        nutritionEstimation: "Default nutrition estimation prompt",
       };
 
       (loadDefaultPrompts as any).mockReturnValue(defaultPrompts);

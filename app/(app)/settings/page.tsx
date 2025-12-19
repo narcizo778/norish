@@ -2,7 +2,7 @@
 
 import { Tabs, Tab } from "@heroui/react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { UserCircleIcon, HomeIcon, ServerIcon, ShieldCheckIcon } from "@heroicons/react/24/solid";
+import { UserCircleIcon, HomeIcon, ServerIcon, ShieldCheckIcon } from "@heroicons/react/20/solid";
 import { Suspense } from "react";
 import dynamic from "next/dynamic";
 
@@ -40,7 +40,7 @@ function SettingsContent() {
 
   return (
     <div className="flex w-full flex-col gap-6">
-      <h1 className="text-3xl font-bold">Settings</h1>
+      <h1 className="text-2xl font-bold">Settings</h1>
 
       <Tabs
         aria-label="Settings tabs"

@@ -3,7 +3,7 @@
 import type { RecurrencePattern } from "@/types/recurrence";
 
 import { useEffect, useState, useRef, memo } from "react";
-import { motion } from "framer-motion";
+import { motion } from "motion/react";
 import { Checkbox, Divider } from "@heroui/react";
 
 import { useGroceriesContext } from "../context";
@@ -162,12 +162,19 @@ function GroceryItemComponent({ id, index, totalItems }: GroceryItemProps) {
           />
 
           <div className="relative ml-2 flex-1">
-            <button
+            <div
               className="w-full cursor-pointer text-left"
-              type="button"
+              role="button"
+              tabIndex={0}
               onClick={(e) => {
                 e.preventDefault();
                 setEditPanelOpen(true);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  setEditPanelOpen(true);
+                }
               }}
             >
               <div className="flex flex-col gap-1">
@@ -210,7 +217,7 @@ function GroceryItemComponent({ id, index, totalItems }: GroceryItemProps) {
                   </span>
                 )}
               </div>
-            </button>
+            </div>
           </div>
         </div>
 

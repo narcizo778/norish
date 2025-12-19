@@ -15,6 +15,7 @@ import { createManyRecipeStepsTx } from "./steps";
 import { attachTagsToRecipeByInputTx } from "./tags";
 
 import { stripHtmlTags } from "@/lib/helpers";
+import { deleteRecipeStepImagesDir } from "@/lib/downloader";
 import {
   RecipeDashboardDTO,
   FilterMode,
@@ -41,6 +42,7 @@ export async function GetTotalRecipeCount(): Promise<number> {
 }
 
 export async function deleteRecipeById(id: string): Promise<void> {
+  await deleteRecipeStepImagesDir(id);
   await db.delete(recipes).where(eq(recipes.id, id));
 }
 
@@ -67,6 +69,65 @@ export async function getRecipeByUrl(url: string): Promise<FullRecipeDTO | null>
   const recipe = await getRecipeFull(rows.id);
 
   return FullRecipeSchema.parse(recipe);
+}
+
+/**
+ * Check if recipe URL exists based on view policy.
+ * Used for queue deduplication before creating new recipes.
+ *
+ * - "everyone": Any recipe with this URL
+ * - "household": Any recipe with this URL owned by household members
+ * - "owner": Any recipe with this URL owned by the user
+ */
+export async function recipeExistsByUrlForPolicy(
+  url: string,
+  userId: string,
+  householdUserIds: string[] | null,
+  viewPolicy: "everyone" | "household" | "owner"
+): Promise<{ exists: boolean; existingRecipeId?: string }> {
+  let whereCondition;
+
+  switch (viewPolicy) {
+    case "everyone":
+      // Check if URL exists at all
+      whereCondition = eq(recipes.url, url);
+      break;
+
+    case "household":
+      // Check if URL exists for any household member
+      if (householdUserIds && householdUserIds.length > 0) {
+        const userIds = householdUserIds.includes(userId)
+          ? householdUserIds
+          : [...householdUserIds, userId];
+
+        whereCondition = and(eq(recipes.url, url), inArray(recipes.userId, userIds));
+      } else {
+        whereCondition = and(eq(recipes.url, url), eq(recipes.userId, userId));
+      }
+      break;
+
+    case "owner":
+      // Check if URL exists for this specific user
+      whereCondition = and(eq(recipes.url, url), eq(recipes.userId, userId));
+      break;
+
+    default:
+      whereCondition = and(eq(recipes.url, url), eq(recipes.userId, userId));
+  }
+
+  const existing = await db.query.recipes.findFirst({
+    where: whereCondition,
+    columns: { id: true },
+  });
+
+  if (existing) {
+    dbLogger.debug(
+      { url, recipeId: existing.id, viewPolicy },
+      "Found existing recipe by URL for policy"
+    );
+  }
+
+  return { exists: existing !== null, existingRecipeId: existing?.id };
 }
 
 /**
@@ -171,7 +232,8 @@ export async function listRecipes(
   search?: string,
   tagNames?: string[],
   filterMode: FilterMode = "OR",
-  sortMode: SortOrder = "dateDesc"
+  sortMode: SortOrder = "dateDesc",
+  minRating?: number
 ): Promise<{ recipes: RecipeDashboardDTO[]; total: number }> {
   const whereConditions: any[] = [];
 
@@ -252,6 +314,9 @@ export async function listRecipes(
         recipeTags: {
           with: { tag: { columns: { id: true, name: true } } },
         },
+        ratings: {
+          columns: { rating: true },
+        },
       },
       where: whereClause,
       orderBy,
@@ -264,32 +329,51 @@ export async function listRecipes(
       .where(whereClause),
   ]);
 
-  const formatted = rows.map((r) => ({
-    id: r.id,
-    userId: r.userId,
-    name: r.name,
-    description: r.description ?? null,
-    url: r.url ?? null,
-    image: r.image ?? null,
-    servings: r.servings ?? 1,
-    prepMinutes: r.prepMinutes ?? null,
-    cookMinutes: r.cookMinutes ?? null,
-    totalMinutes: r.totalMinutes ?? null,
-    createdAt: r.createdAt,
-    updatedAt: r.updatedAt,
-    tags: (r.recipeTags ?? [])
-      .map((rt: { tag?: { name?: string } | null }) => rt.tag?.name)
-      .filter((name: string | undefined | null): name is string => Boolean(name))
-      .map((name) => ({ name })),
-  }));
+  const formatted = rows.map((r) => {
+    // Compute average rating
+    const ratingValues = (r.ratings ?? []).map((rating) => rating.rating);
+    const ratingCount = ratingValues.length;
+    const averageRating =
+      ratingCount > 0 ? ratingValues.reduce((sum, val) => sum + val, 0) / ratingCount : null;
+
+    return {
+      id: r.id,
+      userId: r.userId,
+      name: r.name,
+      description: r.description ?? null,
+      url: r.url ?? null,
+      image: r.image ?? null,
+      servings: r.servings ?? 1,
+      prepMinutes: r.prepMinutes ?? null,
+      cookMinutes: r.cookMinutes ?? null,
+      totalMinutes: r.totalMinutes ?? null,
+      createdAt: r.createdAt,
+      updatedAt: r.updatedAt,
+      tags: (r.recipeTags ?? [])
+        .map((rt: { tag?: { name?: string } | null }) => rt.tag?.name)
+        .filter((name: string | undefined | null): name is string => Boolean(name))
+        .map((name) => ({ name })),
+      averageRating,
+      ratingCount,
+    };
+  });
 
   const parsed = z.array(RecipeDashboardSchema).safeParse(formatted);
 
   if (!parsed.success) throw new Error("RecipeDashboardDTO parse failed");
 
+  // Filter by minimum rating if specified (post-fetch since rating is computed)
+  let filteredRecipes = parsed.data;
+
+  if (minRating !== undefined) {
+    filteredRecipes = parsed.data.filter(
+      (r) => r.averageRating != null && r.averageRating >= minRating
+    );
+  }
+
   return {
-    recipes: parsed.data,
-    total: Number(totalCount?.[0]?.count ?? 0),
+    recipes: filteredRecipes,
+    total: minRating !== undefined ? filteredRecipes.length : Number(totalCount?.[0]?.count ?? 0),
   };
 }
 
@@ -317,12 +401,21 @@ export async function dashboardRecipe(id: string): Promise<RecipeDashboardDTO | 
           tag: { columns: { id: true, name: true } },
         },
       },
+      ratings: {
+        columns: { rating: true },
+      },
     },
     limit: 1,
   });
 
   if (rows.length === 0) return null;
   const r = rows[0];
+
+  // Compute average rating
+  const ratingValues = (r.ratings ?? []).map((rating) => rating.rating);
+  const ratingCount = ratingValues.length;
+  const averageRating =
+    ratingCount > 0 ? ratingValues.reduce((sum, val) => sum + val, 0) / ratingCount : null;
 
   const dto = {
     id: r.id,
@@ -341,6 +434,8 @@ export async function dashboardRecipe(id: string): Promise<RecipeDashboardDTO | 
       .map((rt: any) => rt.tag?.name)
       .filter(nonEmpty)
       .map((name: string) => ({ name })),
+    averageRating,
+    ratingCount,
   };
 
   const parsed = RecipeDashboardSchema.safeParse(dto);
@@ -373,18 +468,22 @@ export async function createRecipeWithRefs(
     prepMinutes: payload.prepMinutes ?? null,
     cookMinutes: payload.cookMinutes ?? null,
     totalMinutes: payload.totalMinutes ?? null,
+    calories: payload.calories ?? null,
+    fat: payload.fat ?? null,
+    carbs: payload.carbs ?? null,
+    protein: payload.protein ?? null,
   };
 
   const finalRecipeId = await db.transaction(async (tx) => {
     const [inserted] = await tx
       .insert(recipes)
       .values(toInsert)
-      .onConflictDoNothing({ target: [recipes.url] })
+      .onConflictDoNothing({ target: [recipes.url, recipes.userId] })
       .returning({ id: recipes.id });
 
     if (!inserted) {
       const existing = await tx.query.recipes.findFirst({
-        where: eq(recipes.url, toInsert.url!),
+        where: and(eq(recipes.url, toInsert.url!), eq(recipes.userId, userId ?? "")),
         columns: { id: true },
       });
 
@@ -453,6 +552,10 @@ export async function getRecipeFull(id: string): Promise<FullRecipeDTO | null> {
       cookMinutes: true,
       totalMinutes: true,
       systemUsed: true,
+      calories: true,
+      fat: true,
+      carbs: true,
+      protein: true,
       createdAt: true,
       updatedAt: true,
     },
@@ -473,6 +576,11 @@ export async function getRecipeFull(id: string): Promise<FullRecipeDTO | null> {
       },
       steps: {
         columns: { step: true, systemUsed: true, order: true },
+        with: {
+          images: {
+            columns: { id: true, image: true, order: true },
+          },
+        },
       },
     },
   });
@@ -503,10 +611,19 @@ export async function getRecipeFull(id: string): Promise<FullRecipeDTO | null> {
     cookMinutes: full.cookMinutes ?? null,
     totalMinutes: full.totalMinutes ?? null,
     systemUsed: full.systemUsed,
+    calories: full.calories ?? null,
+    fat: full.fat ?? null,
+    carbs: full.carbs ?? null,
+    protein: full.protein ?? null,
     steps: ((full.steps as any) ?? []).map((s: any) => ({
       step: s.step,
       systemUsed: s.systemUsed,
       order: s.order,
+      images: (s.images ?? []).map((img: any) => ({
+        id: img.id,
+        image: img.image,
+        order: Number(img.order) || 0,
+      })),
     })),
     createdAt: full.createdAt,
     updatedAt: full.updatedAt,
@@ -590,6 +707,11 @@ export async function updateRecipeWithRefs(
     if (payload.cookMinutes !== undefined) updateData.cookMinutes = payload.cookMinutes;
     if (payload.totalMinutes !== undefined) updateData.totalMinutes = payload.totalMinutes;
     if (payload.systemUsed !== undefined) updateData.systemUsed = payload.systemUsed;
+    if (payload.calories !== undefined) updateData.calories = payload.calories;
+    if (payload.fat !== undefined) updateData.fat = payload.fat;
+    if (payload.carbs !== undefined) updateData.carbs = payload.carbs;
+    if (payload.protein !== undefined) updateData.protein = payload.protein;
+
     updateData.updatedAt = new Date();
 
     if (Object.keys(updateData).length > 1) {
@@ -643,4 +765,29 @@ export async function updateRecipeWithRefs(
       }
     }
   });
+}
+
+export async function searchRecipesByName(
+  ctx: RecipeListContext,
+  query: string,
+  limit: number = 10
+): Promise<{ id: string; name: string; image: string | null }[]> {
+  const whereConditions: any[] = [];
+
+  const policyCondition = await buildViewPolicyCondition(ctx);
+
+  if (policyCondition) {
+    whereConditions.push(policyCondition);
+  }
+
+  whereConditions.push(ilike(recipes.name, `%${query}%`));
+  const whereClause = whereConditions.length ? and(...whereConditions) : undefined;
+  const rows = await db
+    .select({ id: recipes.id, name: recipes.name, image: recipes.image })
+    .from(recipes)
+    .where(whereClause)
+    .orderBy(asc(recipes.name))
+    .limit(limit);
+
+  return rows.map((r) => ({ id: r.id, name: r.name, image: r.image }));
 }

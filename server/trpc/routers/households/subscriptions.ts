@@ -1,9 +1,8 @@
 import type { HouseholdSubscriptionEvents } from "./types";
 
-import { on } from "events";
-
 import { router } from "../../trpc";
 import { authedProcedure } from "../../middleware";
+import { waitForAbort } from "../../helpers";
 
 import { householdEmitter } from "./emitter";
 
@@ -16,14 +15,14 @@ import { trpcLogger as log } from "@/server/logger";
 const onCreated = authedProcedure.subscription(async function* ({ ctx, signal }) {
   const eventName = householdEmitter.userEvent(ctx.user.id, "created");
 
-  log.debug({ userId: ctx.user.id }, "Subscribed to household created events");
+  log.trace({ userId: ctx.user.id }, "Subscribed to household created events");
 
   try {
-    for await (const [data] of on(householdEmitter, eventName, { signal })) {
+    for await (const data of householdEmitter.createSubscription(eventName, signal)) {
       yield data as HouseholdSubscriptionEvents["created"];
     }
   } finally {
-    log.debug({ userId: ctx.user.id }, "Unsubscribed from household created events");
+    log.trace({ userId: ctx.user.id }, "Unsubscribed from household created events");
   }
 });
 
@@ -34,14 +33,14 @@ const onCreated = authedProcedure.subscription(async function* ({ ctx, signal })
 const onKicked = authedProcedure.subscription(async function* ({ ctx, signal }) {
   const eventName = householdEmitter.userEvent(ctx.user.id, "userKicked");
 
-  log.debug({ userId: ctx.user.id }, "Subscribed to user kicked events");
+  log.trace({ userId: ctx.user.id }, "Subscribed to user kicked events");
 
   try {
-    for await (const [data] of on(householdEmitter, eventName, { signal })) {
+    for await (const data of householdEmitter.createSubscription(eventName, signal)) {
       yield data as HouseholdSubscriptionEvents["userKicked"];
     }
   } finally {
-    log.debug({ userId: ctx.user.id }, "Unsubscribed from user kicked events");
+    log.trace({ userId: ctx.user.id }, "Unsubscribed from user kicked events");
   }
 });
 
@@ -51,14 +50,14 @@ const onKicked = authedProcedure.subscription(async function* ({ ctx, signal }) 
 const onFailed = authedProcedure.subscription(async function* ({ ctx, signal }) {
   const eventName = householdEmitter.userEvent(ctx.user.id, "failed");
 
-  log.debug({ userId: ctx.user.id }, "Subscribed to household failed events");
+  log.trace({ userId: ctx.user.id }, "Subscribed to household failed events");
 
   try {
-    for await (const [data] of on(householdEmitter, eventName, { signal })) {
+    for await (const data of householdEmitter.createSubscription(eventName, signal)) {
       yield data as HouseholdSubscriptionEvents["failed"];
     }
   } finally {
-    log.debug({ userId: ctx.user.id }, "Unsubscribed from household failed events");
+    log.trace({ userId: ctx.user.id }, "Unsubscribed from household failed events");
   }
 });
 
@@ -67,26 +66,27 @@ const onFailed = authedProcedure.subscription(async function* ({ ctx, signal }) 
  * Household-scoped: all household members receive this.
  */
 const onUserJoined = authedProcedure.subscription(async function* ({ ctx, signal }) {
-  // Only subscribe if user is in a household
+  // If no household, wait for connection to be closed (will restart on reconnect)
   if (!ctx.household) {
-    log.debug({ userId: ctx.user.id }, "No household, skipping userJoined subscription");
+    log.trace({ userId: ctx.user.id }, "No household, waiting for reconnection");
+    await waitForAbort(signal);
 
     return;
   }
 
   const eventName = householdEmitter.householdEvent(ctx.household.id, "userJoined");
 
-  log.debug(
+  log.trace(
     { userId: ctx.user.id, householdId: ctx.household.id },
     "Subscribed to user joined events"
   );
 
   try {
-    for await (const [data] of on(householdEmitter, eventName, { signal })) {
+    for await (const data of householdEmitter.createSubscription(eventName, signal)) {
       yield data as HouseholdSubscriptionEvents["userJoined"];
     }
   } finally {
-    log.debug({ userId: ctx.user.id }, "Unsubscribed from user joined events");
+    log.trace({ userId: ctx.user.id }, "Unsubscribed from user joined events");
   }
 });
 
@@ -97,14 +97,14 @@ const onUserJoined = authedProcedure.subscription(async function* ({ ctx, signal
 const onUserLeft = authedProcedure.subscription(async function* ({ ctx, signal }) {
   const eventName = householdEmitter.userEvent(ctx.user.id, "userLeft");
 
-  log.debug({ userId: ctx.user.id }, "Subscribed to user left events");
+  log.trace({ userId: ctx.user.id }, "Subscribed to user left events");
 
   try {
-    for await (const [data] of on(householdEmitter, eventName, { signal })) {
+    for await (const data of householdEmitter.createSubscription(eventName, signal)) {
       yield data as HouseholdSubscriptionEvents["userLeft"];
     }
   } finally {
-    log.debug({ userId: ctx.user.id }, "Unsubscribed from user left events");
+    log.trace({ userId: ctx.user.id }, "Unsubscribed from user left events");
   }
 });
 
@@ -113,26 +113,27 @@ const onUserLeft = authedProcedure.subscription(async function* ({ ctx, signal }
  * Household-scoped: remaining members receive this.
  */
 const onMemberRemoved = authedProcedure.subscription(async function* ({ ctx, signal }) {
-  // Only subscribe if user is in a household
+  // If no household, wait for connection to be closed (will restart on reconnect)
   if (!ctx.household) {
-    log.debug({ userId: ctx.user.id }, "No household, skipping memberRemoved subscription");
+    log.trace({ userId: ctx.user.id }, "No household, waiting for reconnection");
+    await waitForAbort(signal);
 
     return;
   }
 
   const eventName = householdEmitter.householdEvent(ctx.household.id, "memberRemoved");
 
-  log.debug(
+  log.trace(
     { userId: ctx.user.id, householdId: ctx.household.id },
     "Subscribed to member removed events"
   );
 
   try {
-    for await (const [data] of on(householdEmitter, eventName, { signal })) {
+    for await (const data of householdEmitter.createSubscription(eventName, signal)) {
       yield data as HouseholdSubscriptionEvents["memberRemoved"];
     }
   } finally {
-    log.debug({ userId: ctx.user.id }, "Unsubscribed from member removed events");
+    log.trace({ userId: ctx.user.id }, "Unsubscribed from member removed events");
   }
 });
 
@@ -141,26 +142,27 @@ const onMemberRemoved = authedProcedure.subscription(async function* ({ ctx, sig
  * Household-scoped: all household members receive this.
  */
 const onAdminTransferred = authedProcedure.subscription(async function* ({ ctx, signal }) {
-  // Only subscribe if user is in a household
+  // If no household, wait for connection to be closed (will restart on reconnect)
   if (!ctx.household) {
-    log.debug({ userId: ctx.user.id }, "No household, skipping adminTransferred subscription");
+    log.trace({ userId: ctx.user.id }, "No household, waiting for reconnection");
+    await waitForAbort(signal);
 
     return;
   }
 
   const eventName = householdEmitter.householdEvent(ctx.household.id, "adminTransferred");
 
-  log.debug(
+  log.trace(
     { userId: ctx.user.id, householdId: ctx.household.id },
     "Subscribed to admin transferred events"
   );
 
   try {
-    for await (const [data] of on(householdEmitter, eventName, { signal })) {
+    for await (const data of householdEmitter.createSubscription(eventName, signal)) {
       yield data as HouseholdSubscriptionEvents["adminTransferred"];
     }
   } finally {
-    log.debug({ userId: ctx.user.id }, "Unsubscribed from admin transferred events");
+    log.trace({ userId: ctx.user.id }, "Unsubscribed from admin transferred events");
   }
 });
 
@@ -169,26 +171,53 @@ const onAdminTransferred = authedProcedure.subscription(async function* ({ ctx, 
  * Household-scoped: all household members receive this (only admin sees the code).
  */
 const onJoinCodeRegenerated = authedProcedure.subscription(async function* ({ ctx, signal }) {
-  // Only subscribe if user is in a household
+  // If no household, wait for connection to be closed (will restart on reconnect)
   if (!ctx.household) {
-    log.debug({ userId: ctx.user.id }, "No household, skipping joinCodeRegenerated subscription");
+    log.trace({ userId: ctx.user.id }, "No household, waiting for reconnection");
+    await waitForAbort(signal);
 
     return;
   }
 
   const eventName = householdEmitter.householdEvent(ctx.household.id, "joinCodeRegenerated");
 
-  log.debug(
+  log.trace(
     { userId: ctx.user.id, householdId: ctx.household.id },
     "Subscribed to join code regenerated events"
   );
 
   try {
-    for await (const [data] of on(householdEmitter, eventName, { signal })) {
+    for await (const data of householdEmitter.createSubscription(eventName, signal)) {
       yield data as HouseholdSubscriptionEvents["joinCodeRegenerated"];
     }
   } finally {
-    log.debug({ userId: ctx.user.id }, "Unsubscribed from join code regenerated events");
+    log.trace({ userId: ctx.user.id }, "Unsubscribed from join code regenerated events");
+  }
+});
+
+const onAllergiesUpdated = authedProcedure.subscription(async function* ({ ctx, signal }) {
+  // If no household, wait for connection to be closed (will restart on reconnect)
+  if (!ctx.household) {
+    log.trace({ userId: ctx.user.id }, "No household, waiting for reconnection");
+    await waitForAbort(signal);
+
+    return;
+  }
+
+  const eventName = householdEmitter.householdEvent(ctx.household.id, "allergiesUpdated");
+
+  log.trace(
+    { userId: ctx.user.id, householdId: ctx.household.id, eventName },
+    "Subscribed to allergies updated events"
+  );
+
+  try {
+    for await (const data of householdEmitter.createSubscription(eventName, signal)) {
+      log.info({ data }, "Received allergiesUpdated event");
+      yield data as HouseholdSubscriptionEvents["allergiesUpdated"];
+    }
+  } finally {
+    log.trace({ userId: ctx.user.id }, "Unsubscribed from allergies updated events");
   }
 });
 
@@ -201,4 +230,5 @@ export const householdSubscriptionsRouter = router({
   onMemberRemoved,
   onAdminTransferred,
   onJoinCodeRegenerated,
+  onAllergiesUpdated,
 });

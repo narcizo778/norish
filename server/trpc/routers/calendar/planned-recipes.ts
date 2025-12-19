@@ -19,8 +19,20 @@ import {
   PlannedRecipeCreateSchema,
   PlannedRecipeDeleteSchema,
   PlannedRecipeUpdateDateSchema,
+  getAllergiesForUsers,
+  getRecipeTagNames,
 } from "@/server/db";
 import { assertHouseholdAccess } from "@/server/auth/permissions";
+
+async function computeAllergyWarningsForRecipe(recipeId: string, userIds: string[]) {
+  const householdAllergies = await getAllergiesForUsers(userIds);
+  const allAllergies = new Set(householdAllergies.map((a) => a.tagName.toLowerCase()));
+
+  const tagNames = await getRecipeTagNames(recipeId);
+  const warnings = tagNames.map((t) => t.toLowerCase()).filter((t) => allAllergies.has(t));
+
+  return [...new Set(warnings)];
+}
 
 // Procedures
 const list = authedProcedure.input(PlannedRecipeListSchema).query(async ({ ctx, input }) => {
@@ -32,9 +44,45 @@ const list = authedProcedure.input(PlannedRecipeListSchema).query(async ({ ctx, 
     input.endISO
   );
 
-  log.debug({ count: recipes.length }, "Listed planned recipes");
+  // Fetch household allergies as a flat set
+  const householdAllergies = await getAllergiesForUsers(ctx.userIds);
+  const allAllergies = new Set(householdAllergies.map((a) => a.tagName.toLowerCase()));
 
-  return recipes;
+  // Get unique recipe IDs
+  const recipeIds = [...new Set(recipes.map((r) => r.recipeId))];
+
+  // Fetch tags for all recipes
+  const recipeTagsMap = new Map<string, string[]>();
+
+  for (const recipeId of recipeIds) {
+    const tagNames = await getRecipeTagNames(recipeId);
+
+    recipeTagsMap.set(
+      recipeId,
+      tagNames.map((t: string) => t.toLowerCase())
+    );
+  }
+
+  // Compute allergy warnings for each planned recipe
+  const recipesWithWarnings = recipes.map((recipe) => {
+    const recipeTags = recipeTagsMap.get(recipe.recipeId) || [];
+    const allergyWarnings: string[] = [];
+
+    for (const tag of recipeTags) {
+      if (allAllergies.has(tag)) {
+        allergyWarnings.push(tag);
+      }
+    }
+
+    return {
+      ...recipe,
+      allergyWarnings,
+    };
+  });
+
+  log.debug({ count: recipesWithWarnings.length }, "Listed planned recipes with allergy warnings");
+
+  return recipesWithWarnings;
 });
 
 const create = authedProcedure.input(PlannedRecipeCreateSchema).mutation(({ ctx, input }) => {
@@ -57,9 +105,19 @@ const create = authedProcedure.input(PlannedRecipeCreateSchema).mutation(({ ctx,
         recipeName: recipe.name,
       }));
     })
-    .then(({ plannedRecipe, recipeName }) => {
+    .then(async ({ plannedRecipe, recipeName }) => {
+      const allergyWarnings = await computeAllergyWarningsForRecipe(
+        plannedRecipe.recipeId,
+        ctx.userIds
+      );
+
       // Emit to household for UI updates
-      calendarEmitter.emitToHousehold(ctx.householdKey, "recipePlanned", { plannedRecipe });
+      calendarEmitter.emitToHousehold(ctx.householdKey, "recipePlanned", {
+        plannedRecipe: {
+          ...plannedRecipe,
+          allergyWarnings,
+        },
+      });
 
       // Emit global event for server-side listeners (e.g., CalDAV sync)
       calendarEmitter.emitGlobal("globalRecipePlanned", {
@@ -145,21 +203,25 @@ const updateDate = authedProcedure
 
         await assertHouseholdAccess(ctx.user.id, ownerId);
         const plannedRecipe = await updatePlannedRecipeDate(id, newDate);
+        const allergyWarnings = await computeAllergyWarningsForRecipe(
+          plannedRecipe.recipeId,
+          ctx.userIds
+        );
 
         // Emit to household for UI updates
         calendarEmitter.emitToHousehold(ctx.householdKey, "recipeUpdated", {
-          plannedRecipe,
+          plannedRecipe: {
+            ...plannedRecipe,
+            allergyWarnings,
+          },
           oldDate,
         });
 
         // Emit global event for server-side listeners (e.g., CalDAV sync)
-        // Fetch recipe name for the global event
-        const recipe = await getRecipeFull(plannedRecipe.recipeId);
-
         calendarEmitter.emitGlobal("globalRecipeUpdated", {
           id: plannedRecipe.id,
           recipeId: plannedRecipe.recipeId,
-          recipeName: recipe?.name ?? "Recipe",
+          recipeName: plannedRecipe.recipeName ?? "Recipe",
           newDate: plannedRecipe.date,
           slot: plannedRecipe.slot as Slot,
           userId: ownerId,

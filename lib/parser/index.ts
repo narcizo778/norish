@@ -7,11 +7,16 @@ import {
   getContentIndicators,
   isAIEnabled,
   isVideoParsingEnabled,
+  shouldAlwaysUseAI,
 } from "@/config/server-config-loader";
 import { isVideoUrl } from "@/lib/helpers";
 import { parserLogger as log } from "@/server/logger";
 
-export async function parseRecipeFromUrl(url: string): Promise<FullRecipeInsertDTO> {
+export async function parseRecipeFromUrl(
+  url: string,
+  allergies?: string[],
+  forceAI?: boolean
+): Promise<FullRecipeInsertDTO> {
   // Check if URL is a video platform (YouTube, Instagram, TikTok, etc.)
   if (await isVideoUrl(url)) {
     const videoEnabled = await isVideoParsingEnabled();
@@ -23,7 +28,7 @@ export async function parseRecipeFromUrl(url: string): Promise<FullRecipeInsertD
     try {
       const { processVideoRecipe } = await import("@/lib/video/processor");
 
-      return await processVideoRecipe(url);
+      return await processVideoRecipe(url, allergies);
     } catch (error: any) {
       log.error({ err: error }, "Video processing failed");
       throw error;
@@ -40,6 +45,27 @@ export async function parseRecipeFromUrl(url: string): Promise<FullRecipeInsertD
     throw new Error("Page does not appear to contain a recipe.");
   }
 
+  // Check if AI-only mode is requested or globally enabled
+  const useAIOnly = forceAI ?? (await shouldAlwaysUseAI());
+
+  if (useAIOnly) {
+    log.info({ url }, "AI-only mode enabled, skipping structured parsers");
+    const aiEnabled = await isAIEnabled();
+
+    if (!aiEnabled) {
+      throw new Error("AI-only import requested but AI is not enabled.");
+    }
+
+    const ai = await extractRecipeWithAI(html, url, allergies);
+
+    if (ai) {
+      return ai;
+    }
+
+    throw new Error("AI extraction failed - could not parse recipe.");
+  }
+
+  // Standard parsing flow: try structured parsers first, then AI fallback
   const jsonLdParsed = await tryExtractRecipeFromJsonLd(url, html);
   const containsStepsAndIngredients =
     !!jsonLdParsed &&
@@ -69,7 +95,7 @@ export async function parseRecipeFromUrl(url: string): Promise<FullRecipeInsertD
 
   if (aiEnabled) {
     log.info({ url }, "Falling back to AI extraction");
-    const ai = await extractRecipeWithAI(html, url);
+    const ai = await extractRecipeWithAI(html, url, allergies);
 
     if (ai) {
       return ai;

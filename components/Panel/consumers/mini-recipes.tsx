@@ -3,7 +3,7 @@
 import { useState, useTransition, useCallback, ChangeEvent } from "react";
 import { Virtuoso } from "react-virtuoso";
 import { Image, Input, Button } from "@heroui/react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence } from "motion/react";
 import { PlusIcon } from "@heroicons/react/16/solid";
 
 import Panel from "@/components/Panel/Panel";
@@ -58,7 +58,13 @@ function MiniRecipesContent({
 
   const handlePlan = useCallback(
     (recipe: RecipeDashboardDTO, slot: Slot) => {
-      planMeal(dateString, slot, recipe.id, recipe.name);
+      planMeal(
+        dateString,
+        slot,
+        recipe.id,
+        recipe.name,
+        recipe.tags.map((t) => t.name)
+      );
       close();
     },
     [dateString, close, planMeal]
@@ -78,12 +84,12 @@ function MiniRecipesContent({
     return (
       <div className="flex min-h-0 flex-1 flex-col gap-3">
         <Input
-          placeholder="Search recipes…"
+          placeholder="Search recipes or add notes..."
           style={{ fontSize: "16px" }}
           value={rawInput}
           onChange={handleInputChange}
         />
-        <div className="flex flex-1 items-center justify-center text-sm text-red-500">
+        <div className="flex flex-1 items-center justify-center text-base text-red-500">
           Failed to load recipes.
         </div>
       </div>
@@ -95,7 +101,7 @@ function MiniRecipesContent({
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3">
       <Input
-        placeholder="Search recipes…"
+        placeholder="Search recipes or add notes..."
         style={{ fontSize: "16px" }}
         value={rawInput}
         onChange={handleInputChange}
@@ -129,7 +135,7 @@ function MiniRecipesContent({
         {isLoading && !recipes.length ? (
           <MiniRecipeSkeleton />
         ) : !isLoading && recipes.length === 0 ? (
-          <div className="text-default-500 flex h-full items-center justify-center text-sm">
+          <div className="text-default-500 flex h-full items-center justify-center text-base">
             No recipes found.
           </div>
         ) : (
@@ -158,7 +164,7 @@ function MiniRecipesContent({
                     <div className="flex min-w-0 flex-col">
                       <div className="truncate text-base font-medium">{recipe.name}</div>
                       {subtitle && (
-                        <div className="text-default-500 truncate text-sm">{subtitle}</div>
+                        <div className="text-default-500 truncate text-base">{subtitle}</div>
                       )}
                     </div>
                   </div>

@@ -9,6 +9,7 @@ import { addToast, Button } from "@heroui/react";
 import Link from "next/link";
 
 import { useRecipesQuery } from "./use-recipes-query";
+import { usePendingRecipesQuery } from "./use-pending-recipes-query";
 
 import { useTRPC } from "@/app/providers/trpc-provider";
 import { createClientLogger } from "@/lib/logger";
@@ -24,6 +25,8 @@ type InfiniteRecipeData = InfiniteData<{
 /**
  * Hook that subscribes to all recipe-related WebSocket events
  * and updates the query cache accordingly.
+ *
+ * Also hydrates pending recipes from the server on mount.
  */
 export function useRecipesSubscription() {
   const trpc = useTRPC();
@@ -31,7 +34,9 @@ export function useRecipesSubscription() {
   const { setAllRecipesData, invalidate, addPendingRecipe, removePendingRecipe } =
     useRecipesQuery();
 
-  // Helper to add a recipe to the first page
+  // Hydrate pending recipes from the server on mount
+  usePendingRecipesQuery();
+
   const addRecipeToList = (recipe: RecipeDashboardDTO) => {
     setAllRecipesData((prev: InfiniteRecipeData | undefined): InfiniteRecipeData | undefined => {
       if (!prev?.pages?.length) {
@@ -56,7 +61,6 @@ export function useRecipesSubscription() {
     });
   };
 
-  // Helper to update a recipe in the list
   const updateRecipeInList = (updatedRecipe: FullRecipeDTO) => {
     setAllRecipesData((prev: InfiniteRecipeData | undefined): InfiniteRecipeData | undefined => {
       if (!prev?.pages) return prev;
@@ -124,8 +128,6 @@ export function useRecipesSubscription() {
     trpc.recipes.onImportStarted.subscriptionOptions(undefined, {
       onData: (payload) => {
         log.info({ recipeId: payload.recipeId, url: payload.url }, "[onImportStarted] Received");
-        // Add pending recipe for cross-device/user sync
-        // Local imports already add pending via mutation onSuccess
         addPendingRecipe(payload.recipeId);
       },
       onError: (err) => log.error({ err }, "[onImportStarted] Error"),
@@ -151,6 +153,9 @@ export function useRecipesSubscription() {
           severity: "success",
           title: "Recipe imported",
           description: "Open recipe",
+          timeout: 2000,
+          shouldShowTimeoutProgress: true,
+          radius: "full",
           classNames: {
             closeButton: "opacity-100 absolute right-4 top-1/2 -translate-y-1/2",
           },
@@ -177,6 +182,8 @@ export function useRecipesSubscription() {
         queryClient.invalidateQueries({
           queryKey: [["recipes", "get"], { input: { id: payload.recipe.id }, type: "query" }],
         });
+
+        queryClient.invalidateQueries({ queryKey: [["calendar", "listRecipes"]] });
       },
       onError: (err) => log.error({ err }, "[onUpdated] Error"),
     })
@@ -212,6 +219,9 @@ export function useRecipesSubscription() {
           severity: "success",
           title: "Measurements converted",
           description: `Recipe converted to ${payload.recipe.systemUsed} units`,
+          timeout: 2000,
+          shouldShowTimeoutProgress: true,
+          radius: "full",
         });
       },
       onError: (err) => log.error({ err }, "[onConverted] Error"),
@@ -234,6 +244,9 @@ export function useRecipesSubscription() {
         addToast({
           severity: "danger",
           title: "Recipe operation failed",
+          timeout: 2000,
+          shouldShowTimeoutProgress: true,
+          radius: "full",
           description: payload.reason,
           classNames: {
             closeButton: "opacity-100 absolute right-4 top-1/2 -translate-y-1/2",

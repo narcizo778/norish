@@ -1,36 +1,23 @@
-import type { CaldavSyncStatusInsertDto, CaldavItemType } from "@/types/dto/caldav-sync-status";
 import type { Slot } from "@/types";
 
-import { truncateErrorMessage } from "./retry-handler";
+import { CalDavClient, type CreateEventInput } from "./client";
 
-import { CalDavClient, type CreateEventInput } from "@/lib/caldav";
+import { getCaldavConfigDecrypted } from "@/server/db/repositories/caldav-config";
 import {
-  getCaldavConfigDecrypted,
-  getHouseholdCaldavConfigs,
-} from "@/server/db/repositories/caldav-config";
-import {
-  createCaldavSyncStatus,
   updateCaldavSyncStatus,
   getCaldavSyncStatusByItemId,
 } from "@/server/db/repositories/caldav-sync-status";
-import { getHouseholdMemberIds } from "@/server/db/repositories/households";
-import { createLogger } from "@/server/logger";
-import { caldavEmitter } from "@/server/trpc/routers/caldav/emitter";
 
-const caldavLogger = createLogger("caldav");
+export function truncateErrorMessage(error: string): string {
+  return error.length <= 500 ? error : error.substring(0, 497) + "...";
+}
 
-/**
- * Parse time range string (e.g., "08:00-09:00") into start and end times
- */
 function parseTimeRange(timeRange: string): { start: string; end: string } {
   const [start, end] = timeRange.split("-");
 
   return { start: start.trim(), end: end.trim() };
 }
 
-/**
- * Get event start and end times based on slot and user preferences
- */
 export function getEventTimeRange(
   date: string,
   slot: Slot,
@@ -51,175 +38,74 @@ export function getEventTimeRange(
   const timeRange = slotTimeMap[slot];
   const { start: startTime, end: endTime } = parseTimeRange(timeRange);
 
-  // Parse date (YYYY-MM-DD format)
   const [year, month, day] = date.split("-").map(Number);
-
-  // Parse start time (HH:MM format)
   const [startHour, startMinute] = startTime.split(":").map(Number);
-  const start = new Date(Date.UTC(year, month - 1, day, startHour, startMinute));
-
-  // Parse end time (HH:MM format)
   const [endHour, endMinute] = endTime.split(":").map(Number);
-  const end = new Date(Date.UTC(year, month - 1, day, endHour, endMinute));
 
-  return { start, end };
+  return {
+    start: new Date(Date.UTC(year, month - 1, day, startHour, startMinute)),
+    end: new Date(Date.UTC(year, month - 1, day, endHour, endMinute)),
+  };
 }
 
-/**
- * Sync a planned item to CalDAV server
- */
+export interface SyncResult {
+  uid: string;
+  isNew: boolean;
+}
+
 export async function syncPlannedItem(
   userId: string,
   itemId: string,
-  itemType: CaldavItemType,
-  plannedItemId: string | null,
   eventTitle: string,
   date: string,
   slot: Slot,
   recipeId?: string
-): Promise<void> {
-  // Get user's CalDAV config
+): Promise<SyncResult> {
   const config = await getCaldavConfigDecrypted(userId);
 
   if (!config || !config.enabled) {
     throw new Error("CalDAV not configured or disabled");
   }
 
-  // Get or create sync status
-  let syncStatus = await getCaldavSyncStatusByItemId(userId, itemId);
+  // Check if we need to update an existing event
+  const syncStatus = await getCaldavSyncStatusByItemId(userId, itemId);
   const isNew = !syncStatus;
 
-  try {
-    // If updating and title changed, delete old event first
-    if (syncStatus && syncStatus.caldavEventUid && syncStatus.eventTitle !== eventTitle) {
-      await deletePlannedItem(userId, itemId);
-      syncStatus = null; // Treat as new
-    }
-
-    // Create CalDAV client
-    const client = new CalDavClient({
-      baseUrl: config.serverUrl,
-      username: config.username,
-      password: config.password,
-    });
-
-    // Build event times
-    const { start, end } = getEventTimeRange(date, slot, config);
-
-    // Build deep link URL for recipes
-    const url = recipeId
-      ? `${process.env.AUTH_URL || "http://localhost:3000"}/recipes/${recipeId}`
-      : undefined;
-
-    // Create event input
-    const eventInput: CreateEventInput = {
-      summary: eventTitle,
-      start,
-      end,
-      description: url,
-      url,
-    };
-
-    // Create event on CalDAV server
-    const created = await client.createEvent(eventInput);
-
-    // Save or update sync status
-    if (isNew) {
-      const insertData: CaldavSyncStatusInsertDto = {
-        userId,
-        itemId,
-        itemType,
-        plannedItemId,
-        eventTitle,
-        syncStatus: "synced",
-        caldavEventUid: created.uid,
-        retryCount: 0,
-        errorMessage: null,
-        lastSyncAt: new Date(),
-      };
-
-      await createCaldavSyncStatus(insertData);
-    } else {
-      await updateCaldavSyncStatus(syncStatus!.id, {
-        eventTitle,
-        syncStatus: "synced",
-        caldavEventUid: created.uid,
-        retryCount: 0,
-        errorMessage: null,
-        lastSyncAt: new Date(),
-      });
-    }
-
-    // Emit sync completed event for UI updates
-    caldavEmitter.emitToUser(userId, "itemStatusUpdated", {
-      itemId,
-      itemType,
-      syncStatus: "synced",
-      errorMessage: null,
-      caldavEventUid: created.uid,
-    });
-    caldavEmitter.emitToUser(userId, "syncCompleted", {
-      itemId,
-      caldavEventUid: created.uid,
-    });
-  } catch (error) {
-    const errorMessage = truncateErrorMessage(
-      error instanceof Error ? error.message : String(error)
-    );
-    const retryCount = syncStatus?.retryCount ?? 0;
-
-    if (isNew) {
-      const insertData: CaldavSyncStatusInsertDto = {
-        userId,
-        itemId,
-        itemType,
-        plannedItemId,
-        eventTitle,
-        syncStatus: "failed",
-        caldavEventUid: null,
-        retryCount: 0,
-        errorMessage,
-        lastSyncAt: new Date(),
-      };
-
-      await createCaldavSyncStatus(insertData);
-    } else {
-      await updateCaldavSyncStatus(syncStatus!.id, {
-        eventTitle,
-        syncStatus: "failed",
-        retryCount: retryCount + 1,
-        errorMessage,
-        lastSyncAt: new Date(),
-      });
-    }
-
-    // Emit sync failed event for UI updates
-    caldavEmitter.emitToUser(userId, "itemStatusUpdated", {
-      itemId,
-      itemType,
-      syncStatus: "failed",
-      errorMessage,
-      caldavEventUid: null,
-    });
-
-    caldavEmitter.emitToUser(userId, "syncFailed", {
-      itemId,
-      errorMessage,
-      retryCount: retryCount + 1,
-    });
-
-    throw error;
+  // If updating and title changed, delete old event first
+  if (syncStatus?.caldavEventUid && syncStatus.eventTitle !== eventTitle) {
+    await deletePlannedItem(userId, itemId);
   }
+
+  const client = new CalDavClient({
+    baseUrl: config.serverUrl,
+    username: config.username,
+    password: config.password,
+  });
+
+  const { start, end } = getEventTimeRange(date, slot, config);
+
+  const url = recipeId
+    ? `${process.env.AUTH_URL || "http://localhost:3000"}/recipes/${recipeId}`
+    : undefined;
+
+  const eventInput: CreateEventInput = {
+    summary: eventTitle,
+    start,
+    end,
+    description: url,
+    url,
+  };
+
+  const created = await client.createEvent(eventInput);
+
+  return { uid: created.uid, isNew };
 }
 
-/**
- * Delete a planned item from CalDAV server
- */
 export async function deletePlannedItem(userId: string, itemId: string): Promise<void> {
   const syncStatus = await getCaldavSyncStatusByItemId(userId, itemId);
 
-  if (!syncStatus || !syncStatus.caldavEventUid) {
-    // Nothing to delete on CalDAV server, just mark as removed
+  if (!syncStatus?.caldavEventUid) {
+    // Nothing to delete on server, just mark as removed if record exists
     if (syncStatus) {
       await updateCaldavSyncStatus(syncStatus.id, {
         syncStatus: "removed",
@@ -243,22 +129,14 @@ export async function deletePlannedItem(userId: string, itemId: string): Promise
   }
 
   try {
-    // Delete from CalDAV server
-    const href = config.serverUrl + syncStatus.caldavEventUid + ".ics";
-    const auth = Buffer.from(`${config.username}:${config.password}`, "utf8").toString("base64");
-
-    const response = await fetch(href, {
-      method: "DELETE",
-      headers: {
-        Authorization: `Basic ${auth}`,
-      },
+    const client = new CalDavClient({
+      baseUrl: config.serverUrl,
+      username: config.username,
+      password: config.password,
     });
 
-    if (!response.ok && response.status !== 404) {
-      throw new Error(`CalDAV delete failed ${response.status} ${response.statusText}`);
-    }
+    await client.deleteEvent(syncStatus.caldavEventUid);
 
-    // Mark as removed
     await updateCaldavSyncStatus(syncStatus.id, {
       syncStatus: "removed",
       lastSyncAt: new Date(),
@@ -269,56 +147,11 @@ export async function deletePlannedItem(userId: string, itemId: string): Promise
       error instanceof Error ? error.message : String(error)
     );
 
-    // Still mark as removed but log the error
+    // Still mark as removed but preserve the error
     await updateCaldavSyncStatus(syncStatus.id, {
       syncStatus: "removed",
       errorMessage,
       lastSyncAt: new Date(),
     });
   }
-}
-
-/**
- * Sync item to all unique household CalDAV servers
- */
-export async function syncToHouseholdServers(
-  userId: string,
-  itemId: string,
-  itemType: CaldavItemType,
-  plannedItemId: string | null,
-  eventTitle: string,
-  date: string,
-  slot: Slot,
-  recipeId?: string
-): Promise<void> {
-  // Get all household member IDs
-  const householdUserIds = await getHouseholdMemberIds(userId);
-
-  // Get unique CalDAV configs
-  const configMap = await getHouseholdCaldavConfigs(householdUserIds);
-
-  // Sync to each unique server
-  const syncPromises: Promise<void>[] = [];
-
-  for (const [serverUrl, config] of configMap.entries()) {
-    const promise = syncPlannedItem(
-      config.userId,
-      itemId,
-      itemType,
-      plannedItemId,
-      eventTitle,
-      date,
-      slot,
-      recipeId
-    ).catch((error) => {
-      caldavLogger.error(
-        { err: error, serverUrl, userId: config.userId },
-        "Failed to sync to CalDAV server"
-      );
-    });
-
-    syncPromises.push(promise);
-  }
-
-  await Promise.allSettled(syncPromises);
 }
